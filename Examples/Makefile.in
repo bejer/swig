@@ -1294,11 +1294,12 @@ allegrocl_clean:
 
 CFFI = @CFFIBIN@
 CFFI_SCRIPT=$(RUNME).lisp
+CFFI_SWIGOPT=-cwrap
 
 cffi: $(SRCDIR_SRCS)
-	$(SWIG) -cffi $(SWIGOPT) -o $(ISRCS) $(INTERFACEPATH)
-#	$(CC) -c $(CCSHARED) $(CPPFLAGS) $(CFLAGS) $(ISRCS) $(INCLUDES) $(SRCDIR_SRCS)
-#	$(LDSHARED) $(CFLAGS) $(LDFLAGS) $(OBJS) $(IOBJS) $(LIBS) -o $(LIBPREFIX)$(TARGET)$(SO)
+	$(SWIG) -cffi $(SWIGOPT) $(CFFI_SWIGOPT) -o $(ISRCS) $(INTERFACEPATH)
+	$(CC) -c $(CCSHARED) $(CPPFLAGS) $(CFLAGS) $(ISRCS) $(INCLUDES) $(SRCDIR_SRCS)
+	$(LDSHARED) $(CFLAGS) $(LDFLAGS) $(OBJS) $(IOBJS) $(LIBS) -o $(LIBPREFIX)$(TARGET)$(SO)
 
 cffi_cpp: $(SRCDIR_SRCS)
 	$(SWIG) -c++ -cffi $(SWIGOPT) -o $(ICXXSRCS) $(INTERFACEPATH)
@@ -1327,6 +1328,7 @@ cffi_clean:
 	rm -f *_wrap* *~ .~*
 	rm -f core @EXTRA_CLEAN@
 	rm -f *.@OBJEXT@ *@SO@
+	rm -f $(TARGET).lisp $(TARGET)-clos.lisp
 
 ##################################################################
 #####                      R                                ######
