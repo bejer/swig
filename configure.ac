@@ -2557,6 +2557,33 @@ AC_SUBST(DDEFAULTVERSION)
 AC_SUBST(DLIBPREFIX)
 
 #----------------------------------------------------------------
+# Look for cffi
+#----------------------------------------------------------------
+
+CFFIBIN=
+
+AC_ARG_WITH(cffi, AS_HELP_STRING([--without-cffi], [Disable cffi])
+AS_HELP_STRING([--with-cffi=path], [Set location of cffi executable]),[ CFFIBIN="$withval"], [CFFIBIN="$alllang_default"])
+
+# First, check for "--without-cffi" or "--with-cffi=no".
+if test x"${CFFIBIN}" = xno; then
+AC_MSG_NOTICE([Disabling cffi])
+else
+# can we find cffi?
+if test "x$CFFIBIN" = xyes; then
+   # We look for sbcl, ccl or ecl in this order.
+   AC_PATH_PROGS(CFFIBIN, [sbcl ccl ecl])
+fi
+if test "x$CFFIBIN" != x; then
+   AC_MSG_RESULT([cffi $CFFIBIN])
+else
+   AC_MSG_RESULT([failed])
+fi
+fi
+
+AC_SUBST(CFFIBIN)
+
+#----------------------------------------------------------------
 # Determine which languages to use for examples/test-suite
 #----------------------------------------------------------------
 
@@ -2665,9 +2692,9 @@ fi
 AC_SUBST(SKIP_R)
 
 SKIP_CFFI=
-#if test -z "$CFFIBIN" ; then
+if test -z "$CFFIBIN" ; then
     SKIP_CFFI="1"
-#fi
+fi
 AC_SUBST(SKIP_CFFI)
 
 SKIP_SCILAB=
