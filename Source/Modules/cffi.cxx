@@ -58,6 +58,7 @@ public:
   virtual int destructorHandler(Node *n);
   virtual int memberfunctionHandler(Node *n);
   virtual int membervariableHandler(Node *n);
+  virtual int staticmembervariableHandler(Node *n);
   virtual int classHandler(Node *n);
 
 private:
@@ -370,6 +371,13 @@ int CFFI::membervariableHandler(Node *n) {
   return Language::membervariableHandler(n);
 }
 
+int CFFI::staticmembervariableHandler(Node *n) {
+  // Let SWIG generate a get/set function pair.
+  Setattr(n, "cffi:staticmembervariable", "1");
+  int lan = Language::staticmembervariableHandler(n);
+  Delattr(n, "cffi:staticmembervariable"); // TODO: Delete this?
+  return lan;
+}
 
 void CFFI::checkConstraints(ParmList *parms, Wrapper *f) {
   Parm *p = parms;
@@ -609,6 +617,7 @@ void CFFI::emit_defun(Node *n, String *name) {
   int argnum = 0;
 
   func_name = lispify_name(n, func_name, "'function");
+  // TODO: When a staticmembervariable then the function name should be lispified (otherwise the Shape::nshapes static member variable is accessed through shape_nshapes_set which is not a lispy name, and is not wrapped further in the -clos file.
 
   emit_inline(n, func_name);
 
@@ -625,13 +634,17 @@ void CFFI::emit_defun(Node *n, String *name) {
       continue;
     }
 
-    String *argname = Getattr(p, "name");
+    String *argname;
+    if (Getattr(n, "cffi:staticmembervariable")) {
+      argname = Getattr(n, "variableWrapper:sym:name"); // To avoid having the argname be e.g. Shape::nshapes (which will cause CL to look for nshapes in the package Shape - giving an error)
+    } else {
+      argname = Getattr(p, "name");
+    }
 
     ffitype = Swig_typemap_lookup("cin", p, "", 0);
 
     int tempargname = 0;
     if (!argname) {
-
       argname = NewStringf("arg%d", argnum);
       tempargname = 1;
     } else if (Strcmp(argname, "t") == 0 || Strcmp(argname, "T") == 0) {
@@ -674,6 +687,35 @@ int CFFI::constantWrapper(Node *n) {
 }
 
 int CFFI::variableWrapper(Node *n) {
+  // TODO:
+  // Create wrapper functions (that are in extern "C", as the direct symbol e.g. Shape::nshapes is mangled). The wrapper functions can then be used as getter and setter for a symbol representing the static member variable.
+  // Figure out how to present a static member variable - could do something similar to cffi:defcvar and either redefine the %var-accessor-<lisp-name> function, or create a macro called def-static-member-var that does something like:
+  /*
+         ;; Getter
+         (defun ,fn ()
+           (mem-ref (fs-pointer-or-lose ,foreign-name ',library) ',type))
+         ;; Setter
+         (defun (setf ,fn) (value)
+           ,(if read-only '(declare (ignore value)) (values))
+           ,(if read-only
+                `(error ,(format nil
+                                 "Trying to modify read-only foreign var: ~A."
+                                 lisp-name))
+                `(setf (mem-ref (fs-pointer-or-lose ,foreign-name ',library)
+                                ',type)
+                       value)))
+         ;; While most Lisps already expand DEFINE-SYMBOL-MACRO to an
+         ;; EVAL-WHEN form like this, that is not required by the
+         ;; standard so we do it ourselves.
+         (eval-when (:compile-toplevel :load-toplevel :execute)
+           (define-symbol-macro ,lisp-name (,fn)))))))
+  */
+  // Is a static member variable
+  if (Getattr(n, "staticmembervariableHandler:name")) { // Could probably also check for the attribute cffi:staticmembervariable, which is set by this class.
+    Language::variableWrapper(n); // Force the emission of set and get function wrappers
+    return SWIG_OK;
+  }
+
   String *var_name = Getattr(n, "sym:name");
   String *lisp_type = Swig_typemap_lookup("cin", n, "", 0);
   String *lisp_name = lispify_name(n, var_name, "'variable");
@@ -681,11 +723,13 @@ int CFFI::variableWrapper(Node *n) {
   if (Strcmp(lisp_name, "t") == 0 || Strcmp(lisp_name, "T") == 0)
     lisp_name = NewStringf("t_var");
 
-  Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s)\n %s)\n", var_name, lisp_name, lisp_type);
-
-  Delete(lisp_type);
+  Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s :read-only nil)\n %s)\n", var_name, lisp_name, lisp_type);
 
   emit_export(n, lisp_name);
+
+  Delete(lisp_type);
+  Delete(lisp_name);
+
   return SWIG_OK;
 }
 
