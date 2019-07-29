@@ -330,7 +330,7 @@ void CFFI::emit_initialize_instance(Node *n) {
     Printf(args_placeholder, " %s", argname);
 
     if (ffitype && Strcmp(ffitype, lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'classname")) == 0)
-      Printf(args_call, " (ff-pointer %s)", argname);
+      Printf(args_call, " (ff-pointer %s)", argname); // TODO: When will this case ever be hit, because otherwise args_placeholder can be replaced by args_call!
     else
       Printf(args_call, " %s", argname);
 
