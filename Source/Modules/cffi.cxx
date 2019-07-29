@@ -75,7 +75,7 @@ private:
   void emit_struct_union(Node *n, bool un);
   void emit_export(Node *n, String *name);
   void emit_inline(Node *n, String *name);
-  void emit_lispfile_preamble(Node* n);
+  void emit_lispfile_preamble(File* f, bool def_package);
   String *lispy_name(char *name);
   String *lispify_name(Node *n, String *ty, const char *flag, bool kw = false);
   String *convert_literal(String *num_param, String *type, bool try_to_split = true);
@@ -177,14 +177,11 @@ int CFFI::top(Node *n) {
 
   Printf(f_runtime, "\n\n#ifndef SWIGCFFI\n#define SWIGCFFI\n#endif\n\n");
 
-  Swig_banner_target_lang(f_lisp, ";;;");
-  Swig_banner_target_lang(f_clos, ";;;");
-
-  // TODO: Either pass a Node* n, or a File* f -> otherwise hardcode two different functions - one for the lispfile and one for the clos file (that references the member variables f_lisp and f_clos directly).
   //   Consider if the -module parameter should specify package? Do one wants to wrap the raw files themselves (when multiple headers) or specify multiple header files in same swig invocation? Or setup a swig interface (.i) file that includes all the relevant header files etc.?
   //     - This could also be a switch like -[no]cwrap that puts it all in a package corresponding to -module, or specify the package name as an option when invoking swig - or specify it in the .i file.
-  emit_lispfile_preamble(f_lisp, true, true);
-  emit_lispfile_preamble(f_clos, false, true);
+  // OBS: Maybe the package should follow the namespace usage in C++, or namespace should be configured in swig interface file (.i)?
+  emit_lispfile_preamble(f_lisp, true);
+  emit_lispfile_preamble(f_clos, false);
 
   Language::top(n);
   Printf(f_lisp, "%s\n", f_clhead);
@@ -974,26 +971,21 @@ void CFFI::emit_inline(Node *n, String *name) {
     Printf(f_cl, "\n(cl:declaim (cl:inline %s))\n", name);
 }
 
-void CFFI::emit_lispfile_preamble(Node* n, ) {
-
+void CFFI::emit_lispfile_preamble(File* f, bool def_package) {
   Swig_banner_target_lang(f, ";;;");
 
-  String* extra_use_pkgs = NewStringf(":ccl");
+  if (def_package) {
+    Printf(f,
+           "\n"
+           "(defpackage :%s)\n",
+           module);
+  }
 
   Printf(f,
-	 "\n"
-	 "(defpackage :%s\n"
-	 "  (:shadowing-import-from :cffi :defcallback)\n"
-	 "  (:use :common-lisp :cffi %s))\n"
-	 "\n"
-	 "(in-package :%s)\n"
-	 "\n",
-	 
-	 module,
-	 extra_use_pkgs,
-	 module
-	 );
-  
+         "\n"
+         "(in-package :%s)\n"
+         "\n",
+         module);
 }
 
 String *CFFI::lispify_name(Node *n, String *ty, const char *flag, bool kw) {
