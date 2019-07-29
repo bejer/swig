@@ -2,7 +2,10 @@
   (:use :cl))
 (cl:in-package :example)
 (cl:require 'cffi)
-(cffi:use-foreign-library "./example.so")
+(cffi:define-foreign-library example
+  (t (:default "./example")))
+;;(cffi:use-foreign-library "./example.so")
+(cffi:use-foreign-library example)
 (cl:load #P"example.lisp")
 (cl:load #P"example-clos.lisp")
 
@@ -11,16 +14,14 @@
 ;;;;; Object creation ;;;;;
 
 (format t "Creating some objects:~%")
-(defparameter c (make-instance 'example::circle :r 10.0d0))
+(defparameter c (make-instance 'example::circle :r 10d0))
 (format t "    Created circle ~A~%" c)
-;; c = example.Circle(10)
-;; print("    Created circle", c)
-;; s = example.Square(10)
-;; print("    Created square", s)
+(defparameter s (make-instance 'example::square :w 10d0))
+(format t "    Created square ~A~%" s)
 
-;; ;;;;; Access a static member ;;;;;
+;;;;; Access a static member ;;;;;
 
-;; print("\nA total of",example.Shape_nshapes,"shapes were created")
+(format t "~%A total of ~A shapes were created~%" example::*Shape_nshapes*)
 
 ;; ;;;;; Member data access ;;;;;
 
