@@ -326,10 +326,8 @@ void CFFI::emit_initialize_instance(Node *n) {
       argname = NewStringf("t-arg%d", argnum);
       tempargname = 1;
     }
-    if (Len(ffitype) > 0)
-      Printf(args_placeholder, " (%s %s)", argname, ffitype);
-    else
-      Printf(args_placeholder, " %s", argname);
+
+    Printf(args_placeholder, " %s", argname);
 
     if (ffitype && Strcmp(ffitype, lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'classname")) == 0)
       Printf(args_call, " (ff-pointer %s)", argname);
