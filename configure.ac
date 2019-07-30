@@ -2561,6 +2561,12 @@ AC_SUBST(DLIBPREFIX)
 #----------------------------------------------------------------
 
 CFFIBIN=
+CFFIBIN_OPTS=
+CFFIBIN_RUN_SCRIPT=
+
+CFFI_SBCL_OPTS="--noinform --disable-debugger --noprint"
+CFFI_CCL_OPTS=
+CFFI_ECL_OPTS=
 
 AC_ARG_WITH(cffi, AS_HELP_STRING([--without-cffi], [Disable cffi])
 AS_HELP_STRING([--with-cffi=path], [Set location of cffi executable]),[ CFFIBIN="$withval"], [CFFIBIN="$alllang_default"])
@@ -2571,17 +2577,62 @@ AC_MSG_NOTICE([Disabling cffi])
 else
 # can we find cffi?
 if test "x$CFFIBIN" = xyes; then
-   # We look for sbcl, ccl or ecl in this order.
-   AC_PATH_PROGS(CFFIBIN, [sbcl ccl ecl])
-fi
-if test "x$CFFIBIN" != x; then
-   AC_MSG_RESULT([cffi $CFFIBIN])
-else
-   AC_MSG_RESULT([failed])
-fi
+# TODO:
+# Streamline how they test cffi support (write to files), use "<" and "--shell" as "run script operators"
+#   -> Put in a commit with the current way of testing for ccl and sbcl that doesn't require writing to a file.
+# Create an autotools function that can do the cffi support checking, which takes the different arguments and sets the CFFIBIN and CFFIBIN_OPTS and run script variables.
+# Write "if the cffi package is installed and loadable in ..."
+  #---- SBCL ----
+  if test -z "$CFFIBIN"; then
+    AC_PATH_PROGS(CFFIBIN_SBCL, sbcl)
+    if test "$CFFIBIN_SBCL"; then
+      AC_MSG_CHECKING(if cffi is installed and loadable in sbcl)
+      is_cffi_supported=`$CFFIBIN_SBCL $CFFI_SBCL_OPTS --quit --eval "(require 'cffill)" > /dev/null 2>&1; echo "$?"`
+      if test "$is_cffi_supported" = "0"; then
+        CFFIBIN=$CFFIBIN_SBCL
+        AC_MSG_RESULT(yes)
+      else
+        AC_MSG_RESULT(no)
+      fi
+    fi
+  fi
+  #---- CCL ----
+  if test -z "$CFFIBIN"; then
+    AC_PATH_PROGS(CFFIBIN_CCL, ccl)
+    if test "$CFFIBIN_CCL"; then
+      AC_MSG_CHECKING(if cffi is installed and loadable in ccl)
+      is_cffi_supported=`$CFFIBIN_CCL $CFFI_CCL_OPTS --batch --eval "(progn (require 'cffill) (quit))" > /dev/null 2>&1; echo "$?"`
+      if test "$is_cffi_supported" = "0"; then
+        CFFIBIN=$CFFIBIN_CCL
+        AC_MSG_RESULT(yes)
+      else
+        AC_MSG_RESULT(no)
+      fi
+    fi
+  fi
+  #---- ECL ----
+  if test -z "$CFFIBIN"; then
+    AC_PATH_PROGS(CFFIBIN_ECL, ecl)
+    if test "$CFFIBIN_ECL"; then
+      AC_MSG_CHECKING(if cffi is installed and loadable in ecl)
+      is_cffi_supported=`echo "(require 'cffill)" > hardcoded_lisp_file_for_testing_cffi.lisp; $CFFIBIN_ECL $CFFI_ECL_OPTS --shell hardcoded_lisp_file_for_testing_cffi.lisp  > /dev/null 2>&1; echo "$?"; rm -f hardcoded_lisp_file_for_testing_cffi.lisp`
+      if test "$is_cffi_supported" = "0"; then
+        CFFIBIN=$CFFIBIN_ECL
+        AC_MSG_RESULT(yes)
+      else
+        AC_MSG_RESULT(no)
+      fi
+    fi
+  fi
 fi
 
-AC_SUBST(CFFIBIN)
+fi
+
+if test -z "$CFFIBIN"; then
+  AC_SUBST(CFFIBIN)
+  AC_SUBST(CFFIBIN_OPTS)
+  AC_SUBST(CFFIBIN_RUN_SCRIPT)
+fi
 
 #----------------------------------------------------------------
 # Determine which languages to use for examples/test-suite
