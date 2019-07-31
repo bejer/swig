@@ -1021,13 +1021,13 @@ void CFFI::emit_lispfile_preamble(File* f, bool def_package) {
   if (def_package) {
     Printf(f,
            "\n"
-           "(defpackage :%s)\n",
+           "(cl:defpackage :%s)\n",
            module);
   }
 
   Printf(f,
          "\n"
-         "(in-package :%s)\n"
+         "(cl:in-package :%s)\n"
          "\n",
          module);
 }
