@@ -1,3 +1,7 @@
+;; ECL requires to either use a full path to the shared library, or put the path into *foreign-library-directories* as shown:
+;; (push (uiop:getcwd) cffi:*foreign-library-directories*)
+;; (cffi:use-foreign-library "example.so")
+
 (defpackage :example)
 (cl:in-package :example)
 (cl:require 'cffi)
