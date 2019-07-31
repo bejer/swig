@@ -2585,8 +2585,8 @@ elif test "x$USECFFI" = "xyes"; then
   if test -z "$CFFIBIN"; then
     AC_PATH_PROGS(CFFIBIN_SBCL, sbcl)
     if test "$CFFIBIN_SBCL"; then
-      AC_MSG_CHECKING(if the cffi package is installed and loadable using $CFFIBIN_SBCL)
-      is_cffi_supported=`echo "(require 'cffi)" > $CFFI_TMP_CFFI_LISP_FILE; $CFFIBIN_SBCL $CFFI_SBCL_OPTS < $CFFI_TMP_CFFI_LISP_FILE > /dev/null 2>&1; echo "$?"; rm -f $CFFI_TMP_CFFI_LISP_FILE`
+      AC_MSG_CHECKING(if the cffi and uiop packages are installed and loadable using $CFFIBIN_SBCL)
+      is_cffi_supported=`echo -e "(require 'uiop)\n(require 'cffi)" > $CFFI_TMP_CFFI_LISP_FILE; $CFFIBIN_SBCL $CFFI_SBCL_OPTS < $CFFI_TMP_CFFI_LISP_FILE > /dev/null 2>&1; echo "$?"; rm -f $CFFI_TMP_CFFI_LISP_FILE`
       if test "$is_cffi_supported" = "0"; then
         CFFIBIN=$CFFIBIN_SBCL
         CFFIBIN_OPTS=$CFFI_SBCL_OPTS
@@ -2601,8 +2601,8 @@ elif test "x$USECFFI" = "xyes"; then
   if test -z "$CFFIBIN"; then
     AC_PATH_PROG(CFFIBIN_CCL, ccl)
     if test "$CFFIBIN_CCL"; then
-      AC_MSG_CHECKING(if the cffi package is installed and loadable using $CFFIBIN_CCL)
-      is_cffi_supported=`echo "(require 'cffi)" > $CFFI_TMP_CFFI_LISP_FILE; $CFFIBIN_CCL $CFFI_CCL_OPTS < $CFFI_TMP_CFFI_LISP_FILE > /dev/null 2>&1; echo "$?"; rm -f $CFFI_TMP_CFFI_LISP_FILE`
+      AC_MSG_CHECKING(if the cffi and uiop packages are installed and loadable using $CFFIBIN_CCL)
+      is_cffi_supported=`echo -e "(require 'uiop)\n(require 'cffi)" > $CFFI_TMP_CFFI_LISP_FILE; $CFFIBIN_CCL $CFFI_CCL_OPTS < $CFFI_TMP_CFFI_LISP_FILE > /dev/null 2>&1; echo "$?"; rm -f $CFFI_TMP_CFFI_LISP_FILE`
       if test "$is_cffi_supported" = "0"; then
         CFFIBIN=$CFFIBIN_CCL
         CFFIBIN_OPTS=$CFFI_CCL_OPTS
@@ -2617,8 +2617,8 @@ elif test "x$USECFFI" = "xyes"; then
   if test -z "$CFFIBIN"; then
     AC_PATH_PROGS(CFFIBIN_ECL, ecl)
     if test "$CFFIBIN_ECL"; then
-      AC_MSG_CHECKING(if the cffi package is installed and loadable using $CFFIBIN_ECL)
-      is_cffi_supported=`echo "(require 'cffi)" > $CFFI_TMP_CFFI_LISP_FILE; $CFFIBIN_ECL $CFFI_ECL_OPTS $CFFI_ECL_RUN_SCRIPT $CFFI_TMP_CFFI_LISP_FILE > /dev/null 2>&1; echo "$?"; rm -f $CFFI_TMP_CFFI_LISP_FILE`
+      AC_MSG_CHECKING(if the cffi and uiop packages are installed and loadable using $CFFIBIN_ECL)
+      is_cffi_supported=`echo -e "(require 'uiop)\n(require 'cffi)" > $CFFI_TMP_CFFI_LISP_FILE; $CFFIBIN_ECL $CFFI_ECL_OPTS $CFFI_ECL_RUN_SCRIPT $CFFI_TMP_CFFI_LISP_FILE > /dev/null 2>&1; echo "$?"; rm -f $CFFI_TMP_CFFI_LISP_FILE`
       if test "$is_cffi_supported" = "0"; then
         CFFIBIN=$CFFIBIN_ECL
         CFFIBIN_OPTS=$CFFI_ECL_OPTS
