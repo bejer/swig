@@ -1279,12 +1279,11 @@ allegrocl_clean:
 ##################################################################
 
 CFFI = @CFFIBIN@
-CFFI_OPTS=--noinform --disable-debugger --noprint
-CFFI_SCRIPT=$(RUNME).lisp
-CFFI_SWIGOPT=-cwrap
+CFFI_OPTS = @CFFIBIN_OPTS@
+CFFI_SCRIPT = $(RUNME).lisp
 
 cffi: $(SRCDIR_SRCS)
-	$(SWIG) -cffi $(SWIGOPT) $(CFFI_SWIGOPT) -o $(ISRCS) $(INTERFACEPATH)
+	$(SWIG) -cffi -cwrap $(SWIGOPT) -o $(ISRCS) $(INTERFACEPATH)
 	$(CC) -c $(CCSHARED) $(CPPFLAGS) $(CFLAGS) $(ISRCS) $(INCLUDES) $(SRCDIR_SRCS)
 	$(LDSHARED) $(CFLAGS) $(LDFLAGS) $(OBJS) $(IOBJS) $(LIBS) -o $(LIBPREFIX)$(TARGET)$(SO)
 
@@ -1298,7 +1297,7 @@ cffi_cpp: $(SRCDIR_SRCS)
 # -----------------------------------------------------------------
 
 cffi_run:
-	$(RUNTOOL) $(CFFI) $(CFFI_OPTS) < $(CFFI_SCRIPT) $(RUNPIPE)
+	$(RUNTOOL) $(CFFI) $(CFFI_OPTS) @CFFIBIN_RUN_SCRIPT@ $(CFFI_SCRIPT) $(RUNPIPE)
 
 # -----------------------------------------------------------------
 # Version display

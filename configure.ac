@@ -2574,36 +2574,37 @@ AC_SUBST(DLIBPREFIX)
 # Look for cffi
 #----------------------------------------------------------------
 
+USECFFI=
 CFFIBIN=
 CFFIBIN_OPTS=
 CFFIBIN_RUN_SCRIPT=
 
 CFFI_SBCL_OPTS="--noinform --disable-debugger --noprint"
-CFFI_CCL_OPTS=
+CFFI_SBCL_RUN_SCRIPT="<"
+CFFI_CCL_OPTS="--batch"
+CFFI_CCL_RUN_SCRIPT="<"
 CFFI_ECL_OPTS=
+CFFI_ECL_RUN_SCRIPT="--shell"
+
+CFFI_TMP_CFFI_LISP_FILE="tmp_cffi_lisp_file.lisp"
 
 AC_ARG_WITH(cffi, AS_HELP_STRING([--without-cffi], [Disable cffi])
-AS_HELP_STRING([--with-cffi=path], [Set location of cffi executable]),[ CFFIBIN="$withval"], [CFFIBIN="$alllang_default"])
+AS_HELP_STRING([--with-cffi=path], [Set location of cffi executable]),[ USECFFI="$withval"], [USECFFI="$alllang_default"])
 
 # First, check for "--without-cffi" or "--with-cffi=no".
-if test x"${CFFIBIN}" = xno; then
-AC_MSG_NOTICE([Disabling cffi])
-else
-# can we find cffi?
-if test "x$CFFIBIN" = xyes; then
-# TODO:
-# Streamline how they test cffi support (write to files), use "<" and "--shell" as "run script operators"
-#   -> Put in a commit with the current way of testing for ccl and sbcl that doesn't require writing to a file.
-# Create an autotools function that can do the cffi support checking, which takes the different arguments and sets the CFFIBIN and CFFIBIN_OPTS and run script variables.
-# Write "if the cffi package is installed and loadable in ..."
+if test "x$USECFFI" = "xno"; then
+  AC_MSG_NOTICE([Disabling cffi])
+elif test "x$USECFFI" = "xyes"; then
   #---- SBCL ----
   if test -z "$CFFIBIN"; then
     AC_PATH_PROGS(CFFIBIN_SBCL, sbcl)
     if test "$CFFIBIN_SBCL"; then
-      AC_MSG_CHECKING(if cffi is installed and loadable in sbcl)
-      is_cffi_supported=`$CFFIBIN_SBCL $CFFI_SBCL_OPTS --quit --eval "(require 'cffill)" > /dev/null 2>&1; echo "$?"`
+      AC_MSG_CHECKING(if the cffi package is installed and loadable using $CFFIBIN_SBCL)
+      is_cffi_supported=`echo "(require 'cffi)" > $CFFI_TMP_CFFI_LISP_FILE; $CFFIBIN_SBCL $CFFI_SBCL_OPTS < $CFFI_TMP_CFFI_LISP_FILE > /dev/null 2>&1; echo "$?"; rm -f $CFFI_TMP_CFFI_LISP_FILE`
       if test "$is_cffi_supported" = "0"; then
         CFFIBIN=$CFFIBIN_SBCL
+        CFFIBIN_OPTS=$CFFI_SBCL_OPTS
+        CFFIBIN_RUN_SCRIPT=$CFFI_SBCL_RUN_SCRIPT
         AC_MSG_RESULT(yes)
       else
         AC_MSG_RESULT(no)
@@ -2612,12 +2613,14 @@ if test "x$CFFIBIN" = xyes; then
   fi
   #---- CCL ----
   if test -z "$CFFIBIN"; then
-    AC_PATH_PROGS(CFFIBIN_CCL, ccl)
+    AC_PATH_PROG(CFFIBIN_CCL, ccl)
     if test "$CFFIBIN_CCL"; then
-      AC_MSG_CHECKING(if cffi is installed and loadable in ccl)
-      is_cffi_supported=`$CFFIBIN_CCL $CFFI_CCL_OPTS --batch --eval "(progn (require 'cffill) (quit))" > /dev/null 2>&1; echo "$?"`
+      AC_MSG_CHECKING(if the cffi package is installed and loadable using $CFFIBIN_CCL)
+      is_cffi_supported=`echo "(require 'cffi)" > $CFFI_TMP_CFFI_LISP_FILE; $CFFIBIN_CCL $CFFI_CCL_OPTS < $CFFI_TMP_CFFI_LISP_FILE > /dev/null 2>&1; echo "$?"; rm -f $CFFI_TMP_CFFI_LISP_FILE`
       if test "$is_cffi_supported" = "0"; then
         CFFIBIN=$CFFIBIN_CCL
+        CFFIBIN_OPTS=$CFFI_CCL_OPTS
+        CFFIBIN_RUN_SCRIPT=$CFFI_CCL_RUN_SCRIPT
         AC_MSG_RESULT(yes)
       else
         AC_MSG_RESULT(no)
@@ -2628,25 +2631,25 @@ if test "x$CFFIBIN" = xyes; then
   if test -z "$CFFIBIN"; then
     AC_PATH_PROGS(CFFIBIN_ECL, ecl)
     if test "$CFFIBIN_ECL"; then
-      AC_MSG_CHECKING(if cffi is installed and loadable in ecl)
-      is_cffi_supported=`echo "(require 'cffill)" > hardcoded_lisp_file_for_testing_cffi.lisp; $CFFIBIN_ECL $CFFI_ECL_OPTS --shell hardcoded_lisp_file_for_testing_cffi.lisp  > /dev/null 2>&1; echo "$?"; rm -f hardcoded_lisp_file_for_testing_cffi.lisp`
+      AC_MSG_CHECKING(if the cffi package is installed and loadable using $CFFIBIN_ECL)
+      is_cffi_supported=`echo "(require 'cffi)" > $CFFI_TMP_CFFI_LISP_FILE; $CFFIBIN_ECL $CFFI_ECL_OPTS $CFFI_ECL_RUN_SCRIPT $CFFI_TMP_CFFI_LISP_FILE > /dev/null 2>&1; echo "$?"; rm -f $CFFI_TMP_CFFI_LISP_FILE`
       if test "$is_cffi_supported" = "0"; then
         CFFIBIN=$CFFIBIN_ECL
+        CFFIBIN_OPTS=$CFFI_ECL_OPTS
+        CFFIBIN_RUN_SCRIPT=$CFFI_ECL_RUN_SCRIPT
         AC_MSG_RESULT(yes)
       else
         AC_MSG_RESULT(no)
       fi
     fi
   fi
+else
+  AC_MSG_WARN([Currently not supported to supply own cffi binary])
 fi
 
-fi
-
-if test -z "$CFFIBIN"; then
-  AC_SUBST(CFFIBIN)
-  AC_SUBST(CFFIBIN_OPTS)
-  AC_SUBST(CFFIBIN_RUN_SCRIPT)
-fi
+AC_SUBST(CFFIBIN)
+AC_SUBST(CFFIBIN_OPTS)
+AC_SUBST(CFFIBIN_RUN_SCRIPT)
 
 #----------------------------------------------------------------
 # Determine which languages to use for examples/test-suite
