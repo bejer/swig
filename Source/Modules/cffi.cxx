@@ -1021,7 +1021,8 @@ void CFFI::emit_lispfile_preamble(File* f, bool def_package) {
   if (def_package) {
     Printf(f,
            "\n"
-           "(cl:defpackage :%s)\n",
+           "(cl:defpackage :%s\n"
+           "  (:use :cl))\n", // Some examples won't properly load/bind foreign functions when the package cl is not being used.
            module);
   }
 
