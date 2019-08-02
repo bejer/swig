@@ -450,7 +450,6 @@ void CFFI::cleanupFunction(Node *n, Wrapper *f, ParmList *parms) {
 }
 
 int CFFI::functionWrapper(Node *n) {
-
   ParmList *parms = Getattr(n, "parms");
   String *iname = Getattr(n, "sym:name");
   Wrapper *f = NewWrapper();
@@ -591,7 +590,7 @@ int CFFI::functionWrapper(Node *n) {
       emit_initialize_instance(n);
     }
   } else
-    emit_defun(n, iname);
+    emit_defun(n, Getattr(n, "name"));
 
   //   if (!overloaded || !Getattr(n, "sym:nextSibling")) {
   //     update_package_if_needed(n);
