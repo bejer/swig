@@ -4,19 +4,24 @@
 
 ;; CCL has a name conflict for gcd, as it has its own defined gcd function.
 
-(defpackage :example)
-(cl:in-package :example)
+;; (defpackage :example
+;;   (:use :cl))
+;; (cl:in-package :example)
+(cl:require 'uiop)
 (cl:require 'cffi)
-(cffi:use-foreign-library "./example.so")
+(cl:push (uiop:getcwd) cffi:*foreign-library-directories*)
+(cffi:define-foreign-library example
+  (t (:default "example")))
+(cffi:use-foreign-library example)
 (cl:load #P"example.lisp")
 
 (cl:in-package :cl-user)
 
 ;; Call our gcd() function
-(defparameter x 42)
-(defparameter y 105)
-(defparameter g (example::gcd x y))
-(format t "The gcd of ~A and ~A is ~A~%" x y g)
+(defparameter *x* 42)
+(defparameter *y* 105)
+(defparameter *gcd* (example::my-gcd *x* *y*))
+(format t "The gcd of ~A and ~A is ~A~%" *x* *y* *gcd*)
 
 ;; Manipulate the Foo global variable
 
