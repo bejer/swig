@@ -279,6 +279,11 @@
 #endif
 
 
+/* ------------------------------------------------------------
+ * Warnings for Common Lisp keywords, built-ins and bad names
+ * ------------------------------------------------------------ */
+%include <cffikw.swg>
+
 %{
 
 #ifdef __cplusplus
