@@ -20,7 +20,7 @@
 ;; Call our gcd() function
 (defparameter *x* 42)
 (defparameter *y* 105)
-(defparameter *gcd* (example::my-gcd *x* *y*))
+(defparameter *gcd* (example::_gcd *x* *y*)) ;; using _gcd as it was renamed from gcd due to it being a built-in function in e.g. CCL and ECL
 (format t "The gcd of ~A and ~A is ~A~%" *x* *y* *gcd*)
 
 ;; Manipulate the Foo global variable
