@@ -1,9 +1,11 @@
 (defpackage :example
   (:use :cl))
 (cl:in-package :example)
+(cl:require 'uiop)
 (cl:require 'cffi)
+(cl:push (uiop:getcwd) cffi:*foreign-library-directories*)
 (cffi:define-foreign-library example
-  (t (:default "./example")))
+  (t (:default "example")))
 ;;(cffi:use-foreign-library "./example.so")
 (cffi:use-foreign-library example)
 (cl:load #P"example.lisp")
@@ -14,46 +16,41 @@
 ;;;;; Object creation ;;;;;
 
 (format t "Creating some objects:~%")
-(defparameter c (make-instance 'example::circle :r 10d0))
-(format t "    Created circle ~A~%" c)
-(defparameter s (make-instance 'example::square :w 10d0))
-(format t "    Created square ~A~%" s)
+(defparameter *circle* (make-instance 'example::circle :r 10d0))
+(format t "    Created circle ~A~%" *circle*)
+(defparameter *square* (make-instance 'example::square :w 10d0))
+(format t "    Created square ~A~%" *square*)
 
 ;;;;; Access a static member ;;;;;
 
-(format t "~%A total of ~A shapes were created~%" example::*Shape_nshapes*)
+;; static member variables are wrapped in getter and setter functions
+(format t "~%A total of ~A shapes were created~%" (example::shape_nshapes_get))
 
-;; ;;;;; Member data access ;;;;;
+;;;;; Member data access ;;;;;
 
-;; ;; Set the location of the object
+;; Set the location of the object
 
-;; c.x = 20
-;; c.y = 30
+(setf (example::x *circle*) 20d0)
+(setf (example::y *circle*) 30d0)
 
-;; s.x = -10
-;; s.y = 5
+(setf (example::x *square*) -10d0)
+(setf (example::y *square*) 5d0)
 
-;; print("\nHere is their current position:")
-;; print(string.format("    Circle = (%f, %f)",c.x,c.y))
-;; print(string.format("    Square = (%f, %f)",s.x,s.y))
+(format t "~%Here is their current position:~%")
+(format t "    Circle = (~A, ~A)~%" (example::x *circle*) (example::y *circle*))
+(format t "    Square = (~A, ~A)~%" (example::x *square*) (example::y *square*))
 
-;; ;;;;; Call some methods ;;;;;
+;;;;; Call some methods ;;;;;
 
-;; print("\nHere are some properties of the shapes:")
-;; for _,o in pairs({c,s}) do
-;;       print("   ", o)
-;;       print("        area      = ", o:area())
-;;       print("        perimeter = ", o:perimeter())
-;; end
+(format t "~%Here are some properties of the shapes:~%")
+(loop :for o :in (list *circle* *square*) :do
+  (format t "    ~A~%" o)
+  (format t "        area        ~A~%" (example::area o))
+  (format t "        perimeter = ~A~%" (example::perimeter o)))
 
-;; print("\nGuess I'll clean up now")
+(format t "~%Guess I'll clean up now~%")
+(example::delete_circle (example::ff-pointer *circle*))
+(example::delete_square (example::ff-pointer *square*))
 
-;; ;; Note: this invokes the virtual destructor
-;; c=nil
-;; s=nil
-
-;; ;; call gc to make sure they are collected
-;; collectgarbage()
-
-;; print(example.Shape_nshapes,"shapes remain")
-;; print "Goodbye"
+(format t "~A shapes remain~%" (example::shape_nshapes_get))
+(format t "Goodbye~%")
