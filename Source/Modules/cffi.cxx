@@ -20,15 +20,19 @@
 
 static const char *usage = "\
 CFFI Options (available with -cffi)\n\
-     -generate-typedef - Use defctype to generate shortcuts according to the\n\
-                         typedefs in the input.\n\
-     -[no]cwrap        - Turn on or turn off generation of an intermediate C\n\
-                         file when creating a C interface. By default this is\n\
-                         only done for C++ code.\n\
-     -[no]swig-lisp    - Turn on or off generation of code for helper lisp\n\
-                         macro, functions, etc. which SWIG uses while\n\
-                         generating wrappers. These macros, functions may still\n\
-                         be used by generated wrapper code.\n\
+     -generate-typedef  - Use defctype to generate shortcuts according to the\n\
+                          typedefs in the input.\n\
+     -[no]cwrap         - Turn on or off generation of an intermediate C\n\
+                          file when creating a C interface. By default this is\n\
+                          only done for C++ code.\n\
+     -[no]swig-lisp     - Turn on or off generation of code for helper lisp\n\
+                          macro, functions, etc. which SWIG uses while\n\
+                          generating wrappers. These macros, functions may still\n\
+                          be used by generated wrapper code.\n\
+     -[no]lisp-preamble - Turn on or off generation of a preamble in the lisp files.\n\
+                          The preamble will try to load the foreign library automatically\n\
+                          and place it in a package named the same as the module.\n\
+                          By default this is turned on.\n\
 ";
 
 class CFFI:public Language {
@@ -36,7 +40,8 @@ public:
   String *f_cl;
   String *f_clhead;
   String *f_clwrap;
-  bool CWrap;     // generate wrapper file for C code?  
+  bool CWrap;     // generate wrapper file for C code?
+  bool LispPreamble;
   File *f_begin;
   File *f_runtime;
   File *f_cxx_header;
@@ -76,7 +81,8 @@ private:
   void emit_struct_union(Node *n, bool un);
   void emit_export(Node *n, String *name);
   void emit_inline(Node *n, String *name);
-  void emit_lispfile_preamble(File* f, bool def_package);
+  void emit_lispfile_preamble(File* f);
+  void emit_lispfile_preamble_clos(File* f);
   String *lispy_name(char *name);
   String *lispify_name(Node *n, String *ty, const char *flag, bool kw = false);
   String *convert_literal(String *num_param, String *type, bool try_to_split = true);
@@ -96,6 +102,7 @@ void CFFI::main(int argc, char *argv[]) {
   generate_typedef_flag = 0;
   no_swig_lisp = false;
   CWrap = false;
+  LispPreabmle = true;
   for (i = 1; i < argc; i++) {
     if (!Strcmp(argv[i], "-help")) {
       Printf(stdout, "%s\n", usage);
@@ -114,6 +121,12 @@ void CFFI::main(int argc, char *argv[]) {
     } else if (!strcmp(argv[i], "-noswig-lisp")) {
       no_swig_lisp = true;
       Swig_mark_arg(i);
+    } else if (!strcmp(argv[i], "-lisp-preamble")) {
+      LispPreamble = true;
+      Swig_mark_arg(i);
+    } else if (!strcmp(argv[i], "-nolisp-preamble")) {
+      LispPreamble = false;
+      Swig_mark_arg(i);
     }
 
   }
@@ -128,7 +141,7 @@ int CFFI::top(Node *n) {
   File *f_null = NewString("");
   module = Getattr(n, "name");
 
-  String *cxx_filename = Getattr(n, "outfile");
+  String *out_filename = Getattr(n, "outfile");
   String *lisp_filename = NewString("");
 
   Printf(lisp_filename, "%s%s.lisp", SWIG_output_directory(), module);
@@ -140,23 +153,26 @@ int CFFI::top(Node *n) {
   }
 
   if (CPlusPlus || CWrap) {
-    f_begin = NewFile(cxx_filename, "w", SWIG_output_files());
+    f_begin = NewFile(out_filename, "w", SWIG_output_files());
     if (!f_begin) {
       Delete(f_lisp);
-      Printf(stderr, "Unable to open %s for writing\n", cxx_filename);
+      FileErrorDisplay(out_filename);
       SWIG_exit(EXIT_FAILURE);
     }
+  } else {
+    f_begin = NewString("");
+  }
 
+  if (CPlusPlus) {
     String *clos_filename = NewString("");
     Printf(clos_filename, "%s%s-clos.lisp", SWIG_output_directory(), module);
     f_clos = NewFile(clos_filename, "w", SWIG_output_files());
     if (!f_clos) {
       Delete(f_lisp);
-      Printf(stderr, "Unable to open %s for writing\n", cxx_filename);
+      FileErrorDisplay(clos_filename);
       SWIG_exit(EXIT_FAILURE);
     }
   } else {
-    f_begin = NewString("");
     f_clos = NewString("");
   }
 
@@ -182,7 +198,9 @@ int CFFI::top(Node *n) {
   //     - This could also be a switch like -[no]cwrap that puts it all in a package corresponding to -module, or specify the package name as an option when invoking swig - or specify it in the .i file.
   // OBS: Maybe the package should follow the namespace usage in C++, or namespace should be configured in swig interface file (.i)?
   emit_lispfile_preamble(f_lisp, true);
-  emit_lispfile_preamble(f_clos, false);
+  if (CPlusPlus) {
+    emit_lispfile_preamble_clos(f_clos, false);
+  }
 
   Language::top(n);
   Printf(f_lisp, "%s\n", f_clhead);
@@ -1014,22 +1032,40 @@ void CFFI::emit_inline(Node *n, String *name) {
     Printf(f_cl, "\n(cl:declaim (cl:inline %s))\n", name);
 }
 
-void CFFI::emit_lispfile_preamble(File* f, bool def_package) {
+void CFFI::emit_lispfile_preamble(File* f) {
   Swig_banner_target_lang(f, ";;;");
 
-  if (def_package) {
-    Printf(f,
-           "\n"
-           "(cl:defpackage :%s\n"
-           "  (:use :cl))\n", // Some examples won't properly load/bind foreign functions when the package cl is not being used.
-           module);
+  if (LispPreamble) {
+    return;
   }
 
   Printf(f,
          "\n"
+         "(cl:defpackage :%s\n"
+         "  (:use :cl))\n" // Some examples won't properly load/bind foreign functions when the package cl is not being used.
          "(cl:in-package :%s)\n"
-         "\n",
-         module);
+         "(cl:require 'uiop)\n"
+         "(cl:require 'cffi)\n"
+         "(cl:push (uiop:getcwd) cffi:*foreign-library-directories*)\n"
+         "(cffi:define-foreign-library %s\n"
+         "  (t (:default \"%s\")))\n"
+         "(cffi:use-foreign-library %s)\n",
+         module, module, module, module, module);
+}
+
+void CFFI::emit_lispfile_preamble_clos(File* f) {
+  Swig_banner_target_lang(f, ";;;");
+
+  if (LispPreamble) {
+    return;
+  }
+
+  Printf(f,
+         "\n"
+         "(cl:load #P\"%s\")"
+         "\n"
+         "(cl:in-package :%s)\n",
+         module, module);
 }
 
 String *CFFI::lispify_name(Node *n, String *ty, const char *flag, bool kw) {
