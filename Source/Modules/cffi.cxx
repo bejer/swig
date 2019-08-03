@@ -79,10 +79,10 @@ private:
   void emit_setter(Node *n);
   void emit_class(Node *n);
   void emit_struct_union(Node *n, bool un);
-  void emit_export(Node *n, String *name);
+  void emit_export(File *f, Node *n, String *name);
   void emit_inline(Node *n, String *name);
-  void emit_lispfile_preamble(File* f);
-  void emit_lispfile_preamble_clos(File* f);
+  void emit_lispfile_preamble(File *f);
+  void emit_lispfile_preamble_clos(File *f);
   String *lispy_name(char *name);
   String *lispify_name(Node *n, String *ty, const char *flag, bool kw = false);
   String *convert_literal(String *num_param, String *type, bool try_to_split = true);
@@ -102,7 +102,7 @@ void CFFI::main(int argc, char *argv[]) {
   generate_typedef_flag = 0;
   no_swig_lisp = false;
   CWrap = false;
-  LispPreabmle = true;
+  LispPreamble = true;
   for (i = 1; i < argc; i++) {
     if (!Strcmp(argv[i], "-help")) {
       Printf(stdout, "%s\n", usage);
@@ -197,9 +197,9 @@ int CFFI::top(Node *n) {
   //   Consider if the -module parameter should specify package? Do one wants to wrap the raw files themselves (when multiple headers) or specify multiple header files in same swig invocation? Or setup a swig interface (.i) file that includes all the relevant header files etc.?
   //     - This could also be a switch like -[no]cwrap that puts it all in a package corresponding to -module, or specify the package name as an option when invoking swig - or specify it in the .i file.
   // OBS: Maybe the package should follow the namespace usage in C++, or namespace should be configured in swig interface file (.i)?
-  emit_lispfile_preamble(f_lisp, true);
+  emit_lispfile_preamble(f_lisp);
   if (CPlusPlus) {
-    emit_lispfile_preamble_clos(f_clos, false);
+    emit_lispfile_preamble_clos(f_clos);
   }
 
   Language::top(n);
@@ -316,10 +316,12 @@ void CFFI::emit_defmethod(Node *n) {
   if (x == 1)
     Printf(f_clos, "(cl:shadow \"%s\")\n", method_name);
 
+  String *lispified_method_name = lispify_name(n, lispy_name(Char(method_name)), "'method");
   Printf(f_clos, "(cl:defmethod %s (%s)\n  (%s%s))\n\n",
-         lispify_name(n, lispy_name(Char(method_name)), "'method"), args_placeholder,
+         lispified_method_name, args_placeholder,
          lispify_name(n, Getattr(n, "sym:name"), "'function"), args_call);
 
+  emit_export(f_clos, n, lispified_method_name);
 }
 
 void CFFI::emit_initialize_instance(Node *n) {
@@ -356,7 +358,7 @@ void CFFI::emit_initialize_instance(Node *n) {
       Delete(argname);
   }
 
-  Printf(f_clos, "(cl:defmethod initialize-instance :after ((obj %s) &key%s)\n  (setf (slot-value obj 'ff-pointer) (%s%s)))\n\n",
+  Printf(f_clos, "(cl:defmethod initialize-instance :after ((obj %s) &key%s)\n  (cl:setf (cl:slot-value obj 'ff-pointer) (%s%s)))\n\n",
          lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), args_placeholder,
          lispify_name(n, Getattr(n, "sym:name"), "'function"), args_call);
 
@@ -364,17 +366,26 @@ void CFFI::emit_initialize_instance(Node *n) {
 
 void CFFI::emit_setter(Node *n) {
   Node *parent = getCurrentClass();
+  String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
   Printf(f_clos, "(cl:defmethod (cl:setf %s) (arg0 (obj %s))\n  (%s (ff-pointer obj) arg0))\n\n",
-         lispify_name(n, Getattr(n, "name"), "'method"),
+         lispified_name,
          lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), lispify_name(n, Getattr(n, "sym:name"), "'function"));
+
+  String *setter_export = NewString("");
+  Printf(setter_export, "(cl:setf %s)", lispified_name);
+  emit_export(f_clos, n, setter_export);
+  Delete(setter_export);
 }
 
 
 void CFFI::emit_getter(Node *n) {
   Node *parent = getCurrentClass();
+  String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
   Printf(f_clos, "(cl:defmethod %s ((obj %s))\n  (%s (ff-pointer obj)))\n\n",
-         lispify_name(n, Getattr(n, "name"), "'method"),
+         lispified_name,
          lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), lispify_name(n, Getattr(n, "sym:name"), "'function"));
+
+  emit_export(f_clos, n, lispified_name);
 }
 
 int CFFI::memberfunctionHandler(Node *n) {
@@ -678,7 +689,7 @@ void CFFI::emit_defun(Node *n, String *name) {
   }
   Printf(f_cl, ")\n");    /* finish arg list */
 
-  emit_export(n, func_name);
+  emit_export(f_cl, n, func_name);
 }
 
 
@@ -699,7 +710,7 @@ int CFFI::constantWrapper(Node *n) {
   Printf(f_cl, "\n(cl:defconstant %s %s)\n", name, converted_value);
   Delete(converted_value);
 
-  emit_export(n, name);
+  emit_export(f_cl, n, name);
   return SWIG_OK;
 }
 
@@ -740,9 +751,9 @@ int CFFI::variableWrapper(Node *n) {
   if (Strcmp(lisp_name, "t") == 0 || Strcmp(lisp_name, "T") == 0)
     lisp_name = NewStringf("t_var");
 
-  Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s :read-only nil)\n %s)\n", var_name, lisp_name, lisp_type);
+  Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s :read-only cl:nil)\n %s)\n", var_name, lisp_name, lisp_type);
 
-  emit_export(n, lisp_name);
+  emit_export(f_cl, n, lisp_name);
 
   Delete(lisp_type);
   Delete(lisp_name);
@@ -754,7 +765,7 @@ int CFFI::typedefHandler(Node *n) {
   if (generate_typedef_flag && strncmp(Char(Getattr(n, "type")), "enum", 4)) {
     String *lisp_name = lispify_name(n, Getattr(n, "name"), "'typename");
     Printf(f_cl, "\n(cffi:defctype %s %s)\n", lisp_name, Swig_typemap_lookup("cin", n, "", 0));
-    emit_export(n, lisp_name);
+    emit_export(f_cl, n, lisp_name);
   }
   return Language::typedefHandler(n);
 }
@@ -811,10 +822,10 @@ int CFFI::enumDeclaration(Node *n) {
 
   // No need to export keywords
   if (lisp_name && Len(lisp_name) != 0) {
-    emit_export(n, lisp_name);
+    emit_export(f_cl, n, lisp_name);
   } else {
     for (Node *c = firstChild(n); c; c = nextSibling(c))
-      emit_export(c, lispify_name(c, Getattr(c, "name"), "'enumvalue"));
+      emit_export(f_cl, c, lispify_name(c, Getattr(c, "name"), "'enumvalue"));
   }
 
   return SWIG_OK;
@@ -845,6 +856,8 @@ void CFFI::emit_class(Node *n) {
   Printf(supers, ")");
   Printf(f_clos, "\n(cl:defclass %s%s", lisp_name, supers);
   Printf(f_clos, "\n  ((ff-pointer :reader ff-pointer)))\n\n");
+
+  emit_export(f_clos, n, lisp_name);
 
   Parm *pattern = NewParm(Getattr(n, "name"), NULL, n);
 
@@ -1006,10 +1019,10 @@ void CFFI::emit_struct_union(Node *n, bool un = false) {
 
   Printf(f_cl, ")\n");
 
-  emit_export(n, lisp_name);
+  emit_export(f_cl, n, lisp_name);
   for (Node *child = firstChild(n); child; child = nextSibling(child)) {
     if (!Strcmp(nodeType(child), "cdecl")) {
-      emit_export(child, lispify_name(child, Getattr(child, "sym:name"), "'slotname"));
+      emit_export(f_cl, child, lispify_name(child, Getattr(child, "sym:name"), "'slotname"));
     }
   }
 
@@ -1019,11 +1032,10 @@ void CFFI::emit_struct_union(Node *n, bool un = false) {
 
 }
 
-void CFFI::emit_export(Node *n, String *name) {
-  if (GetInt(n, "feature:export")) {
-    String* package = Getattr(n, "feature:export:package");
-    Printf(f_cl, "\n(cl:export '%s%s%s)\n", name, package ? " " : "",
-                                                  package ? package : "");
+void CFFI::emit_export(File *f, Node *n, String *name) {
+  // Defaulting to export symbols and always export symbols with an explicit %feature("export") directive
+  if (!GetInt(n, "feature:no_export") || GetInt(n, "feature:export")) {
+    Printf(f, "(cl:export '%s)\n\n", name);
   }
 }
 
@@ -1032,31 +1044,31 @@ void CFFI::emit_inline(Node *n, String *name) {
     Printf(f_cl, "\n(cl:declaim (cl:inline %s))\n", name);
 }
 
-void CFFI::emit_lispfile_preamble(File* f) {
+void CFFI::emit_lispfile_preamble(File *f) {
   Swig_banner_target_lang(f, ";;;");
 
-  if (LispPreamble) {
+  if (!LispPreamble) {
     return;
   }
 
   Printf(f,
          "\n"
-         "(cl:defpackage :%s\n"
-         "  (:use :cl))\n" // Some examples won't properly load/bind foreign functions when the package cl is not being used.
-         "(cl:in-package :%s)\n"
+         "(cl:defpackage #:%s\n"
+         "  (:use :cl))\n" // Workaround for problem with keys in initialize-instance within clos-file.
+         "(cl:in-package #:%s)\n"
          "(cl:require 'uiop)\n"
          "(cl:require 'cffi)\n"
          "(cl:push (uiop:getcwd) cffi:*foreign-library-directories*)\n"
          "(cffi:define-foreign-library %s\n"
-         "  (t (:default \"%s\")))\n"
+         "  (cl:t (:default \"%s\")))\n"
          "(cffi:use-foreign-library %s)\n",
          module, module, module, module, module);
 }
 
-void CFFI::emit_lispfile_preamble_clos(File* f) {
+void CFFI::emit_lispfile_preamble_clos(File *f) {
   Swig_banner_target_lang(f, ";;;");
 
-  if (LispPreamble) {
+  if (!LispPreamble) {
     return;
   }
 
@@ -1064,7 +1076,7 @@ void CFFI::emit_lispfile_preamble_clos(File* f) {
          "\n"
          "(cl:load #P\"%s\")"
          "\n"
-         "(cl:in-package :%s)\n",
+         "(cl:in-package #:%s)\n",
          module, module);
 }
 
