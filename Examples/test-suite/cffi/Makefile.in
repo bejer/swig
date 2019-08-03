@@ -4,6 +4,7 @@
 
 LANGUAGE     = cffi
 CFFI         = @CFFIBIN@
+CFFI_OPTS    = @CFFIBIN_OPTS@
 SCRIPTSUFFIX = _runme.lisp
 
 srcdir       = @srcdir@
@@ -14,7 +15,7 @@ include $(srcdir)/../common.mk
 
 # Overridden variables here
 # no C++ tests for now
-CPP_TEST_CASES =
+#CPP_TEST_CASES +=
 #C_TEST_CASES +=
 
 # Custom tests - tests with additional commandline options
@@ -40,7 +41,7 @@ CPP_TEST_CASES =
 # a file is found which has _runme.lisp appended after the testcase name.
 run_testcase = \
 	if [ -f $(SCRIPTDIR)/$(SCRIPTPREFIX)$*$(SCRIPTSUFFIX) ]; then \
-	  env LD_LIBRARY_PATH=.:$$LD_LIBRARY_PATH $(RUNTOOL) $(CFFI) -batch -s $(SCRIPTDIR)/$(SCRIPTPREFIX)$*$(SCRIPTSUFFIX); \
+	  env LD_LIBRARY_PATH=.:$$LD_LIBRARY_PATH $(RUNTOOL) $(CFFI) $(CFFI_OPTS) @CFFIBIN_RUN_SCRIPT@ $(SCRIPTDIR)/$(SCRIPTPREFIX)$*$(SCRIPTSUFFIX); \
 	fi
 
 # Clean: (does nothing, we dont generate extra cffi code)
