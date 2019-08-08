@@ -1063,6 +1063,7 @@ void CFFI::emit_lispfile_preamble(File *f) {
          "(cl:in-package #:%s)\n"
          "(cl:require 'uiop)\n"
          "(cl:require 'cffi)\n"
+         "(cl:require 'incongruent-methods)\n"
          "(cl:push (uiop:getcwd) cffi:*foreign-library-directories*)\n"
          "(cffi:define-foreign-library %s\n"
          "  (cl:t (:default \"%s\")))\n"
