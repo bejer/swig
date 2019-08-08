@@ -380,8 +380,7 @@ void CFFI::emit_setter(Node *n) {
          lispified_name,
          lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), lispify_name(n, Getattr(n, "sym:name"), "'function"));
 
-  String *setter_export = NewString("");
-  Printf(setter_export, "(cl:setf %s)", lispified_name);
+  String *setter_export = NewStringf("(setf %s)", lispified_name);
   emit_export(f_clos, n, setter_export);
   Delete(setter_export);
 }
