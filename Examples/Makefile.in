@@ -1328,7 +1328,7 @@ cffi_clean:
 	rm -f *_wrap* *~ .~*
 	rm -f core @EXTRA_CLEAN@
 	rm -f *.@OBJEXT@ *@SO@
-	rm -f $(TARGET).lisp $(TARGET)-clos.lisp
+	rm -f $(TARGET).lisp $(TARGET)-clos.lisp $(TARGET).fasl
 
 ##################################################################
 #####                      R                                ######

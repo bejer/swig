@@ -1080,11 +1080,13 @@ void CFFI::emit_lispfile_preamble(File *f) {
 
   Printf(f,
          "\n"
-         "(cl:defpackage #:%s)\n"
-         "(cl:in-package #:%s)\n"
-         "(cl:require 'uiop)\n"
-         "(cl:require 'cffi)\n"
-         "%s"
+         "(cl:eval-when (:compile-toplevel :load-toplevel :execute)\n"
+         "  (cl:defpackage #:%s)\n"
+         "  (cl:in-package #:%s)\n"
+         "  (cl:require 'uiop)\n"
+         "  (cl:require 'cffi)\n"
+         "  %s"
+         "  )\n"
          "(cl:push (uiop:getcwd) cffi:*foreign-library-directories*)\n"
          "(cffi:define-foreign-library %s\n"
          "  (cl:t (:default \"%s\")))\n"
@@ -1101,8 +1103,8 @@ void CFFI::emit_lispfile_preamble_clos(File *f) {
 
   Printf(f,
          "\n"
-         "(cl:load #P\"%s\")"
-         "\n"
+         "(cl:eval-when (:compile-toplevel :load-toplevel :execute)\n"
+         "  (cl:load #P\"%s\"))\n"
          "(cl:in-package #:%s)\n",
          module, module);
 }
