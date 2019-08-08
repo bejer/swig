@@ -74,7 +74,7 @@ private:
 
   void emit_defun(Node *n, String *name);
   void emit_defmethod(Node *n);
-  void emit_initialize_instance(Node *n);
+  void emit_constructor(Node *n);
   void emit_getter(Node *n);
   void emit_setter(Node *n);
   void emit_class(Node *n);
@@ -324,7 +324,7 @@ void CFFI::emit_defmethod(Node *n) {
   emit_export(f_clos, n, lispified_method_name);
 }
 
-void CFFI::emit_initialize_instance(Node *n) {
+void CFFI::emit_constructor(Node *n) {
   String *args_placeholder = NewStringf("");
   String *args_call = NewStringf("");
 
@@ -358,10 +358,19 @@ void CFFI::emit_initialize_instance(Node *n) {
       Delete(argname);
   }
 
-  Printf(f_clos, "(cl:defmethod initialize-instance :after ((obj %s) &key%s)\n  (cl:setf (cl:slot-value obj 'ff-pointer) (%s%s)))\n\n",
-         lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), args_placeholder,
-         lispify_name(n, Getattr(n, "sym:name"), "'function"), args_call);
+  String *class_name = lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class");
+  String *constructor_name = NewStringf("make-%s", class_name);
 
+  Printf(f_clos,
+         "(cl:defun %s (cl:&key%s)\n"
+         "  (cl:let ((obj (cl:make-instance '%s)))\n"
+         "    (cl:setf (cl:slot-value obj 'ff-pointer) (%s%s))\n"
+         "    (cl:values obj)))\n\n",
+         constructor_name, args_placeholder, class_name,
+         lispify_name(n, Getattr(n, "sym:name"), "'function"), args_call);
+  emit_export(f_clos, n, constructor_name);
+
+  Delete(constructor_name);
 }
 
 void CFFI::emit_setter(Node *n) {
@@ -616,7 +625,7 @@ int CFFI::functionWrapper(Node *n) {
         emit_setter(n);
     }
     else if (Getattr(n, "cffi:constructorfunction")) {
-      emit_initialize_instance(n);
+      emit_constructor(n);
     }
   } else
     emit_defun(n, Getattr(n, "name"));
@@ -857,8 +866,6 @@ void CFFI::emit_class(Node *n) {
   Printf(f_clos, "\n(cl:defclass %s%s", lisp_name, supers);
   Printf(f_clos, "\n  ((ff-pointer :reader ff-pointer)))\n\n");
 
-  emit_export(f_clos, n, lisp_name);
-
   Parm *pattern = NewParm(Getattr(n, "name"), NULL, n);
 
   Swig_typemap_register("lispclass", pattern, lisp_name, NULL, NULL);
@@ -1053,8 +1060,7 @@ void CFFI::emit_lispfile_preamble(File *f) {
 
   Printf(f,
          "\n"
-         "(cl:defpackage #:%s\n"
-         "  (:use :cl))\n" // Workaround for problem with keys in initialize-instance within clos-file.
+         "(cl:defpackage #:%s)\n"
          "(cl:in-package #:%s)\n"
          "(cl:require 'uiop)\n"
          "(cl:require 'cffi)\n"
