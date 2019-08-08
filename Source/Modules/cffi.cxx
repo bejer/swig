@@ -300,7 +300,7 @@ void CFFI::emit_defmethod(Node *n) {
       Printf(args_placeholder, "%s", argname);
 
     if (ffitype && Strcmp(ffitype, lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'classname")) == 0)
-      Printf(args_call, " (ff-pointer %s)", argname);
+      Printf(args_call, " (%%ff-pointer %s)", argname);
     else
       Printf(args_call, " %s", argname);
 
@@ -317,7 +317,7 @@ void CFFI::emit_defmethod(Node *n) {
     Printf(f_clos, "(cl:shadow \"%s\")\n", method_name);
 
   String *lispified_method_name = lispify_name(n, lispy_name(Char(method_name)), "'method");
-  Printf(f_clos, "(cl:defmethod %s (%s)\n  (%s%s))\n\n",
+  Printf(f_clos, "(incongruent-methods:define-incongruent-method %s (%s)\n  (%s%s))\n\n",
          lispified_method_name, args_placeholder,
          lispify_name(n, Getattr(n, "sym:name"), "'function"), args_call);
 
@@ -348,7 +348,7 @@ void CFFI::emit_constructor(Node *n) {
     Printf(args_placeholder, " %s", argname);
 
     if (ffitype && Strcmp(ffitype, lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'classname")) == 0)
-      Printf(args_call, " (ff-pointer %s)", argname); // TODO: When will this case ever be hit, because otherwise args_placeholder can be replaced by args_call!
+      Printf(args_call, " (%%ff-pointer %s)", argname); // TODO: When will this case ever be hit, because otherwise args_placeholder can be replaced by args_call!
     else
       Printf(args_call, " %s", argname);
 
@@ -376,7 +376,7 @@ void CFFI::emit_constructor(Node *n) {
 void CFFI::emit_setter(Node *n) {
   Node *parent = getCurrentClass();
   String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
-  Printf(f_clos, "(cl:defmethod (cl:setf %s) (arg0 (obj %s))\n  (%s (ff-pointer obj) arg0))\n\n",
+  Printf(f_clos, "(cl:defmethod (cl:setf %s) (arg0 (obj %s))\n  (%s (%%ff-pointer obj) arg0))\n\n",
          lispified_name,
          lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), lispify_name(n, Getattr(n, "sym:name"), "'function"));
 
@@ -389,7 +389,7 @@ void CFFI::emit_setter(Node *n) {
 void CFFI::emit_getter(Node *n) {
   Node *parent = getCurrentClass();
   String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
-  Printf(f_clos, "(cl:defmethod %s ((obj %s))\n  (%s (ff-pointer obj)))\n\n",
+  Printf(f_clos, "(cl:defmethod %s ((obj %s))\n  (%s (%%ff-pointer obj)))\n\n",
          lispified_name,
          lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), lispify_name(n, Getattr(n, "sym:name"), "'function"));
 
@@ -863,7 +863,7 @@ void CFFI::emit_class(Node *n) {
 
   Printf(supers, ")");
   Printf(f_clos, "\n(cl:defclass %s%s", lisp_name, supers);
-  Printf(f_clos, "\n  ((ff-pointer :reader ff-pointer)))\n\n");
+  Printf(f_clos, "\n  ((ff-pointer :reader %%ff-pointer)))\n\n");
 
   Parm *pattern = NewParm(Getattr(n, "name"), NULL, n);
 
