@@ -20,19 +20,24 @@
 
 static const char *usage = "\
 CFFI Options (available with -cffi)\n\
-     -generate-typedef  - Use defctype to generate shortcuts according to the\n\
-                          typedefs in the input.\n\
-     -[no]cwrap         - Turn on or off generation of an intermediate C\n\
-                          file when creating a C interface. By default this is\n\
-                          only done for C++ code.\n\
-     -[no]swig-lisp     - Turn on or off generation of code for helper lisp\n\
-                          macro, functions, etc. which SWIG uses while\n\
-                          generating wrappers. These macros, functions may still\n\
-                          be used by generated wrapper code.\n\
-     -[no]lisp-preamble - Turn on or off generation of a preamble in the lisp files.\n\
-                          The preamble will try to load the foreign library automatically\n\
-                          and place it in a package named the same as the module.\n\
-                          By default this is turned on.\n\
+     -generate-typedef        - Use defctype to generate shortcuts according to the\n\
+                                typedefs in the input.\n\
+     -[no]cwrap               - Turn on or off generation of an intermediate C\n\
+                                file when creating a C interface. By default this is\n\
+                                only done for C++ code.\n\
+     -[no]swig-lisp           - Turn on or off generation of code for helper lisp\n\
+                                macro, functions, etc. which SWIG uses while\n\
+                                generating wrappers. These macros, functions may still\n\
+                                be used by generated wrapper code.\n\
+     -[no]lisp-preamble       - Turn on or off generation of a preamble in the lisp files.\n\
+                                The preamble will try to load the foreign library automatically\n\
+                                and place it in a package named the same as the module.\n\
+                                By default this is turned on.\n\
+     -[no]incongruent-methods - Turn on or off the usage of incongruent-methods in CL.\n\
+                                Incongruent methods have a higher overhead cost than regular methods,\n\
+                                but adds support for function/methods overloading in CL, which\n\
+                                resembles the usage of function overloading in C++.\n\
+                                This is only relevant for C++ code, and is enabled by default.\n\
 ";
 
 class CFFI:public Language {
@@ -41,7 +46,6 @@ public:
   String *f_clhead;
   String *f_clwrap;
   bool CWrap;     // generate wrapper file for C code?
-  bool LispPreamble;
   File *f_begin;
   File *f_runtime;
   File *f_cxx_header;
@@ -91,6 +95,9 @@ private:
   String *trim(String *string);
   int generate_typedef_flag;
   bool no_swig_lisp;
+  bool lisp_preamble;
+  bool use_incongruent_methods;
+  String *defmethod; // Specify which function to use for defining methods in CL
 };
 
 void CFFI::main(int argc, char *argv[]) {
@@ -102,7 +109,8 @@ void CFFI::main(int argc, char *argv[]) {
   generate_typedef_flag = 0;
   no_swig_lisp = false;
   CWrap = false;
-  LispPreamble = true;
+  lisp_preamble = true;
+  use_incongruent_methods = true;
   for (i = 1; i < argc; i++) {
     if (!Strcmp(argv[i], "-help")) {
       Printf(stdout, "%s\n", usage);
@@ -122,10 +130,16 @@ void CFFI::main(int argc, char *argv[]) {
       no_swig_lisp = true;
       Swig_mark_arg(i);
     } else if (!strcmp(argv[i], "-lisp-preamble")) {
-      LispPreamble = true;
+      lisp_preamble = true;
       Swig_mark_arg(i);
     } else if (!strcmp(argv[i], "-nolisp-preamble")) {
-      LispPreamble = false;
+      lisp_preamble = false;
+      Swig_mark_arg(i);
+    } else if (!strcmp(argv[i], "-incongruent-methods")) {
+      use_incongruent_methods = true;
+      Swig_mark_arg(i);
+    } else if (!strcmp(argv[i], "-noincongruent-methods")) {
+      use_incongruent_methods = false;
       Swig_mark_arg(i);
     }
 
@@ -150,6 +164,12 @@ int CFFI::top(Node *n) {
   if (!f_lisp) {
     FileErrorDisplay(lisp_filename);
     SWIG_exit(EXIT_FAILURE);
+  }
+
+  if (CPlusPlus && use_incongruent_methods) {
+    defmethod = NewString("incongruent-methods:define-incongruent-method");
+  } else {
+    defmethod = NewString("cl:defmethod");
   }
 
   if (CPlusPlus || CWrap) {
@@ -216,6 +236,7 @@ int CFFI::top(Node *n) {
   Delete(f_begin);
   Delete(f_cxx_wrapper);
   Delete(f_null);
+  Delete(defmethod);
 
   return SWIG_OK;
 }
@@ -317,8 +338,8 @@ void CFFI::emit_defmethod(Node *n) {
     Printf(f_clos, "(cl:shadow \"%s\")\n", method_name);
 
   String *lispified_method_name = lispify_name(n, lispy_name(Char(method_name)), "'method");
-  Printf(f_clos, "(incongruent-methods:define-incongruent-method %s (%s)\n  (%s%s))\n\n",
-         lispified_method_name, args_placeholder,
+  Printf(f_clos, "(%s %s (%s)\n  (%s%s))\n\n",
+         defmethod, lispified_method_name, args_placeholder,
          lispify_name(n, Getattr(n, "sym:name"), "'function"), args_call);
 
   emit_export(f_clos, n, lispified_method_name);
@@ -376,8 +397,8 @@ void CFFI::emit_constructor(Node *n) {
 void CFFI::emit_setter(Node *n) {
   Node *parent = getCurrentClass();
   String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
-  Printf(f_clos, "(cl:defmethod (cl:setf %s) (arg0 (obj %s))\n  (%s (%%ff-pointer obj) arg0))\n\n",
-         lispified_name,
+  Printf(f_clos, "(%s (cl:setf %s) (arg0 (obj %s))\n  (%s (%%ff-pointer obj) arg0))\n\n",
+         defmethod, lispified_name,
          lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), lispify_name(n, Getattr(n, "sym:name"), "'function"));
 
   String *setter_export = NewStringf("(setf %s)", lispified_name);
@@ -389,8 +410,8 @@ void CFFI::emit_setter(Node *n) {
 void CFFI::emit_getter(Node *n) {
   Node *parent = getCurrentClass();
   String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
-  Printf(f_clos, "(cl:defmethod %s ((obj %s))\n  (%s (%%ff-pointer obj)))\n\n",
-         lispified_name,
+  Printf(f_clos, "(%s %s ((obj %s))\n  (%s (%%ff-pointer obj)))\n\n",
+         defmethod, lispified_name,
          lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), lispify_name(n, Getattr(n, "sym:name"), "'function"));
 
   emit_export(f_clos, n, lispified_name);
@@ -1053,7 +1074,7 @@ void CFFI::emit_inline(Node *n, String *name) {
 void CFFI::emit_lispfile_preamble(File *f) {
   Swig_banner_target_lang(f, ";;;");
 
-  if (!LispPreamble) {
+  if (!lisp_preamble) {
     return;
   }
 
@@ -1063,18 +1084,18 @@ void CFFI::emit_lispfile_preamble(File *f) {
          "(cl:in-package #:%s)\n"
          "(cl:require 'uiop)\n"
          "(cl:require 'cffi)\n"
-         "(cl:require 'incongruent-methods)\n"
+         "%s"
          "(cl:push (uiop:getcwd) cffi:*foreign-library-directories*)\n"
          "(cffi:define-foreign-library %s\n"
          "  (cl:t (:default \"%s\")))\n"
          "(cffi:use-foreign-library %s)\n",
-         module, module, module, module, module);
+         module, module, (use_incongruent_methods && CPlusPlus) ? "(cl:require 'incongruent-methods)\n" : "", module, module, module);
 }
 
 void CFFI::emit_lispfile_preamble_clos(File *f) {
   Swig_banner_target_lang(f, ";;;");
 
-  if (!LispPreamble) {
+  if (!lisp_preamble) {
     return;
   }
 
