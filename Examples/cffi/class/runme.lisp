@@ -3,9 +3,9 @@
 ;;;;; Object creation ;;;;;
 
 (format t "Creating some objects:~%")
-(defparameter *circle* (make-instance 'example:circle :r 10d0))
+(defparameter *circle* (example:make-circle :r 10d0))
 (format t "    Created circle ~A~%" *circle*)
-(defparameter *square* (make-instance 'example:square :w 10d0))
+(defparameter *square* (example:make-square :w 10d0))
 (format t "    Created square ~A~%" *square*)
 
 ;;;;; Access a static member ;;;;;
