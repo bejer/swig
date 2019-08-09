@@ -295,18 +295,18 @@ void CFFI::emit_defmethod(Node *n) {
   ParmList *pl = Getattr(n, "parms");
   int argnum = 0;
   Node *parent = getCurrentClass();
-  bool first = 0;
+  bool first_parameter = true;
   
   for (Parm *p = pl; p; p = nextSibling(p), argnum++) {
     String *argname = Getattr(p, "name");
     String *ffitype = Swig_typemap_lookup("lispclass", p, "", 0);
-
     int tempargname = 0;
 
-    if(!first)
-      first = true;
-    else
+    if(first_parameter) {
+      first_parameter = false;
+    } else {
       Printf(args_placeholder, " ");
+    }
       
     if (!argname) {
       argname = NewStringf("arg%d", argnum);
@@ -352,12 +352,19 @@ void CFFI::emit_constructor(Node *n) {
   ParmList *pl = Getattr(n, "parms");
   int argnum = 0;
   Node *parent = getCurrentClass();
+  bool first_parameter = true;
 
   for (Parm *p = pl; p; p = nextSibling(p), argnum++) {
     String *argname = Getattr(p, "name");
     String *ffitype = Swig_typemap_lookup("lispclass", p, "", 0);
-
     int tempargname = 0;
+
+    if(first_parameter) {
+      first_parameter = false;
+    } else {
+      Printf(args_placeholder, " ");
+    }
+
     if (!argname) {
       argname = NewStringf("arg%d", argnum);
       tempargname = 1;
@@ -366,7 +373,11 @@ void CFFI::emit_constructor(Node *n) {
       tempargname = 1;
     }
 
-    Printf(args_placeholder, " %s", argname);
+    if (Len(ffitype) > 0) {
+      Printf(args_placeholder, "(%s %s)", argname, ffitype);
+    } else {
+      Printf(args_placeholder, " %s", argname);
+    }
 
     if (ffitype && Strcmp(ffitype, lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'classname")) == 0)
       Printf(args_call, " (%%ff-pointer %s)", argname); // TODO: When will this case ever be hit, because otherwise args_placeholder can be replaced by args_call!
@@ -383,11 +394,11 @@ void CFFI::emit_constructor(Node *n) {
   String *constructor_name = NewStringf("make-%s", class_name);
 
   Printf(f_clos,
-         "(cl:defun %s (cl:&key%s)\n"
+         "(%s %s (%s)\n"
          "  (cl:let ((obj (cl:make-instance '%s)))\n"
          "    (cl:setf (cl:slot-value obj 'ff-pointer) (%s%s))\n"
          "    (cl:values obj)))\n\n",
-         constructor_name, args_placeholder, class_name,
+         defmethod, constructor_name, args_placeholder, class_name,
          lispify_name(n, Getattr(n, "sym:name"), "'function"), args_call);
   emit_export(f_clos, n, constructor_name);
 
@@ -675,6 +686,15 @@ void CFFI::emit_defun(Node *n, String *name) {
 
   func_name = lispify_name(n, func_name, "'function");
   // TODO: When a staticmembervariable then the function name should be lispified (otherwise the Shape::nshapes static member variable is accessed through shape_nshapes_set which is not a lispy name, and is not wrapped further in the -clos file.
+
+  // append __SWIG_# if necessary to make the lisp symbols unique too,
+  // where # is some number.
+  char* match = strstr(Char(name),"__SWIG");
+  if (match) {
+    func_name = NewStringf("%s%s", func_name, match); // allocating new string, but it is not being deleted as the pointer is passed on to Setattr.
+    // Update the new name
+    Setattr(n, "sym:name", func_name);
+  }
 
   emit_inline(n, func_name);
 
