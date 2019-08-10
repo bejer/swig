@@ -679,20 +679,24 @@ int CFFI::functionWrapper(Node *n) {
 
 void CFFI::emit_defun(Node *n, String *name) {
   String *func_name = Getattr(n, "sym:name");
+  String *args_placeholder = NewStringf("");
+  String *args_call = NewStringf("");
 
   ParmList *pl = Getattr(n, "parms");
 
   int argnum = 0;
+  bool is_global_function = false;
+
+  is_global_function = Checkattr(n, "view", "globalfunctionHandler");
 
   func_name = lispify_name(n, func_name, "'function");
   // TODO: When a staticmembervariable then the function name should be lispified (otherwise the Shape::nshapes static member variable is accessed through shape_nshapes_set which is not a lispy name, and is not wrapped further in the -clos file.
 
-  // append __SWIG_# if necessary to make the lisp symbols unique too,
-  // where # is some number.
-  char* match = strstr(Char(name),"__SWIG");
-  if (match) {
-    func_name = NewStringf("%s%s", func_name, match); // allocating new string, but it is not being deleted as the pointer is passed on to Setattr.
-    // Update the new name
+  // append overloaded name (if any) to make the lisp symbols unique too,
+  String *overname = Getattr(n, "sym:overname");
+  if (overname) {
+    func_name = NewStringf("%s%s", func_name, overname); // allocating new string, but it is not being deleted as the pointer is passed on to Setattr.
+    // Update the new function name
     Setattr(n, "sym:name", func_name);
   }
 
@@ -704,6 +708,7 @@ void CFFI::emit_defun(Node *n, String *name) {
   Printf(f_cl, " %s", ffitype);
   Delete(ffitype);
 
+  bool first_parameter = true;
   for (Parm *p = pl; p; p = nextSibling(p), argnum++) {
 
     if (SwigType_isvarargs(Getattr(p, "type"))) {
@@ -733,12 +738,46 @@ void CFFI::emit_defun(Node *n, String *name) {
 
     Delete(ffitype);
 
+    // The case of having varargs and overloaded functions is not being handled properly (considered an edge case, if it is legal C/C++)
+    // If overloaded (global) function, then create parameter list for definig a method in CL
+    if (overname && is_global_function) {
+      ffitype = Swig_typemap_lookup("lispclass", p, "", 0);
+
+      if (first_parameter)
+        first_parameter = false;
+      else
+        Printf(args_placeholder, " ");
+
+      if (Len(ffitype) > 0)
+        Printf(args_placeholder, "(%s %s)", argname, ffitype);
+      else
+        Printf(args_placeholder, "%s", argname);
+
+      // Hacky solution: Look at the ffitype and see it if does not begin with "cl:" (indicating it is a CL built-in type), then it should use the %ff-pointer reader.
+      if (ffitype && Strncmp(ffitype, "cl:", 3) != 0)
+        Printf(args_call, " (%%ff-pointer %s)", argname);
+      else
+        Printf(args_call, " %s", argname);
+
+      Delete(ffitype);
+    }
+
     if (tempargname)
       Delete(argname);
   }
   Printf(f_cl, ")\n");    /* finish arg list */
 
-  emit_export(f_cl, n, func_name);
+  if (overname && is_global_function) {
+    String *lispified_method_name = lispify_name(n, lispy_name(Char(Getattr(n, "name"))), "'method");
+    Printf(f_clos, "(%s %s (%s)\n  (%s%s))\n",
+           defmethod, lispified_method_name, args_placeholder,
+           func_name, args_call);
+    emit_export(f_clos, n, lispified_method_name);
+  } else if (overname) {
+    // Do not export wrappers for overloaded functions
+  } else {
+    emit_export(f_cl, n, func_name);
+  }
 }
 
 
@@ -1124,7 +1163,7 @@ void CFFI::emit_lispfile_preamble_clos(File *f) {
   Printf(f,
          "\n"
          "(cl:eval-when (:compile-toplevel :load-toplevel :execute)\n"
-         "  (cl:load #P\"%s\"))\n"
+         "  (cl:load #P\"%s.lisp\"))\n"
          "(cl:in-package #:%s)\n",
          module, module);
 }
