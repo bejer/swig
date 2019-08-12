@@ -284,6 +284,7 @@ int CFFI::destructorHandler(Node *n) {
   Printf(stderr, "destructor %s\n", Getattr(n, "name"));
 #endif
 
+  Setattr(n, "cffi:destructorfunction", "1");
   // Let SWIG generate a global forwarding function.
   return Language::destructorHandler(n);
 }
@@ -779,7 +780,13 @@ void CFFI::emit_defun(Node *n, String *name) {
            func_name, args_call);
     emit_export(f_clos, n, lispified_method_name);
   } else if (is_overloaded) {
-    // Do not export wrappers for overloaded functions
+    // Do not export low-level wrappers for overloaded functions
+  } else if (Checkattr(n, "cffi:membervariable", "1")) {
+    // Do not export low-level wrappers for member variables
+  } else if (Checkattr(n, "memberfunction", "1")) {
+    // Do not export low-level wrappers for member functions
+  } else if (Checkattr(n, "cffi:constructorfunction", "1") || Checkattr(n, "cffi:destructorfunction", "1")) {
+    // Do not export low-level wrappers for constructors and destructors
   } else {
     emit_export(f_cl, n, func_name);
   }

@@ -36,9 +36,9 @@
   (format t "        perimeter = ~A~%" (example:perimeter o)))
 
 (format t "~%Guess I'll clean up now~%")
-(example:delete_circle (example::%ff-pointer *circle*))
+(example::delete_circle (example::%ff-pointer *circle*))
 (setf *circle* nil)
-(example:delete_square (example::%ff-pointer *square*))
+(example::delete_square (example::%ff-pointer *square*))
 (setf *square* nil)
 
 (format t "~A shapes remain~%" (example:shape_nshapes_get))
