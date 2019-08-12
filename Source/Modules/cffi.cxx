@@ -686,18 +686,23 @@ void CFFI::emit_defun(Node *n, String *name) {
 
   int argnum = 0;
   bool is_global_function = false;
+  bool is_overloaded = false;
 
   is_global_function = Checkattr(n, "view", "globalfunctionHandler");
 
   func_name = lispify_name(n, func_name, "'function");
   // TODO: When a staticmembervariable then the function name should be lispified (otherwise the Shape::nshapes static member variable is accessed through shape_nshapes_set which is not a lispy name, and is not wrapped further in the -clos file.
 
-  // append overloaded name (if any) to make the lisp symbols unique too,
-  String *overname = Getattr(n, "sym:overname");
-  if (overname) {
-    func_name = NewStringf("%s%s", func_name, overname); // allocating new string, but it is not being deleted as the pointer is passed on to Setattr.
-    // Update the new function name
-    Setattr(n, "sym:name", func_name);
+  // Is the function overloaded
+  is_overloaded = Getattr(n, "sym:overloaded") ? true : false;
+  if (is_overloaded) {
+    // append overloaded name (if any) to make the lisp symbols unique too,
+    String *overname = Getattr(n, "sym:overname");
+    if (overname) {
+      func_name = NewStringf("%s%s", func_name, overname); // allocating new string, but it is not being deleted as the pointer is passed on to Setattr.
+      // Update the new function name
+      Setattr(n, "sym:name", func_name);
+    }
   }
 
   emit_inline(n, func_name);
@@ -740,7 +745,7 @@ void CFFI::emit_defun(Node *n, String *name) {
 
     // The case of having varargs and overloaded functions is not being handled properly (considered an edge case, if it is legal C/C++)
     // If overloaded (global) function, then create parameter list for definig a method in CL
-    if (overname && is_global_function) {
+    if (is_overloaded && is_global_function) {
       ffitype = Swig_typemap_lookup("lispclass", p, "", 0);
 
       if (first_parameter)
@@ -767,13 +772,13 @@ void CFFI::emit_defun(Node *n, String *name) {
   }
   Printf(f_cl, ")\n");    /* finish arg list */
 
-  if (overname && is_global_function) {
+  if (is_overloaded && is_global_function) {
     String *lispified_method_name = lispify_name(n, lispy_name(Char(Getattr(n, "name"))), "'method");
     Printf(f_clos, "(%s %s (%s)\n  (%s%s))\n",
            defmethod, lispified_method_name, args_placeholder,
            func_name, args_call);
     emit_export(f_clos, n, lispified_method_name);
-  } else if (overname) {
+  } else if (is_overloaded) {
     // Do not export wrappers for overloaded functions
   } else {
     emit_export(f_cl, n, func_name);
