@@ -38,6 +38,16 @@ CFFI Options (available with -cffi)\n\
                                 but adds support for function/methods overloading in CL, which\n\
                                 resembles the usage of function overloading in C++.\n\
                                 This is only relevant for C++ code, and is enabled by default.\n\
+     -[no]pointer-wrapper     - Turn on or off the usage of pointer wrapper in the generated CL code.\n\
+                                The pointer wrapper is a CL class that wraps the pointer and its type.\n\
+                                The pointer wrapper is supposed to be used with the basic types e.g.\n\
+                                integers, floats.\n\
+                                Associated with the pointer wrapper class is a method to dereference\n\
+                                the pointer according to its type. The method is called 'deref' and can\n\
+                                be used for reading the value being pointed to, and act as a place for\n\
+                                setting a new value (i.e. using setf).\n\
+                                This is enabled by default, favoring convenience by not having to manually\n\
+                                supply the type when dereferening CFFI pointers (e.g. mem-ref).\n\
 ";
 
 class CFFI:public Language {
@@ -85,8 +95,9 @@ private:
   void emit_struct_union(Node *n, bool un);
   void emit_export(File *f, Node *n, String *name);
   void emit_inline(Node *n, String *name);
-  void emit_lispfile_preamble(File *f);
-  void emit_lispfile_preamble_clos(File *f);
+  void emit_lispfile_preamble();
+  void emit_lispfile_preamble_clos();
+  void emit_pointer_wrapper();
   String *lispy_name(char *name);
   String *lispify_name(Node *n, String *ty, const char *flag, bool kw = false);
   String *convert_literal(String *num_param, String *type, bool try_to_split = true);
@@ -97,6 +108,7 @@ private:
   bool no_swig_lisp;
   bool lisp_preamble;
   bool use_incongruent_methods;
+  bool use_pointer_wrapper;
   String *defmethod; // Specify which function to use for defining methods in CL
 };
 
@@ -111,6 +123,7 @@ void CFFI::main(int argc, char *argv[]) {
   CWrap = false;
   lisp_preamble = true;
   use_incongruent_methods = true;
+  use_pointer_wrapper = true;
   for (i = 1; i < argc; i++) {
     if (!Strcmp(argv[i], "-help")) {
       Printf(stdout, "%s\n", usage);
@@ -141,7 +154,14 @@ void CFFI::main(int argc, char *argv[]) {
     } else if (!strcmp(argv[i], "-noincongruent-methods")) {
       use_incongruent_methods = false;
       Swig_mark_arg(i);
+    } else if (!strcmp(argv[i], "-pointer-wrapper")) {
+      use_pointer_wrapper = true;
+      Swig_mark_arg(i);
+    } else if (!strcmp(argv[i], "-nopointer-wrapper")) {
+      use_pointer_wrapper = false;
+      Swig_mark_arg(i);
     }
+
 
   }
   f_clhead = NewString("");
@@ -217,10 +237,10 @@ int CFFI::top(Node *n) {
   //   Consider if the -module parameter should specify package? Do one wants to wrap the raw files themselves (when multiple headers) or specify multiple header files in same swig invocation? Or setup a swig interface (.i) file that includes all the relevant header files etc.?
   //     - This could also be a switch like -[no]cwrap that puts it all in a package corresponding to -module, or specify the package name as an option when invoking swig - or specify it in the .i file.
   // OBS: Maybe the package should follow the namespace usage in C++, or namespace should be configured in swig interface file (.i)?
-  emit_lispfile_preamble(f_lisp);
-  if (CPlusPlus) {
-    emit_lispfile_preamble_clos(f_clos);
-  }
+  emit_lispfile_preamble();
+  emit_lispfile_preamble_clos();
+
+  emit_pointer_wrapper();
 
   Language::top(n);
   Printf(f_lisp, "%s\n", f_clhead);
@@ -295,7 +315,6 @@ void CFFI::emit_defmethod(Node *n) {
 
   ParmList *pl = Getattr(n, "parms");
   int argnum = 0;
-  Node *parent = getCurrentClass();
   bool first_parameter = true;
   
   for (Parm *p = pl; p; p = nextSibling(p), argnum++) {
@@ -321,7 +340,8 @@ void CFFI::emit_defmethod(Node *n) {
     else
       Printf(args_placeholder, "%s", argname);
 
-    if (ffitype && Strcmp(ffitype, lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'classname")) == 0)
+    bool is_swigtype = Checkattr(p, "tmap:cin:SWIGTYPE", "1");
+    if (ffitype && is_swigtype)
       Printf(args_call, " (%%ff-pointer %s)", argname);
     else
       Printf(args_call, " %s", argname);
@@ -339,9 +359,25 @@ void CFFI::emit_defmethod(Node *n) {
     Printf(f_clos, "(cl:shadow \"%s\")\n", method_name);
 
   String *lispified_method_name = lispify_name(n, lispy_name(Char(method_name)), "'method");
-  Printf(f_clos, "(%s %s (%s)\n  (%s%s))\n\n",
-         defmethod, lispified_method_name, args_placeholder,
-         lispify_name(n, Getattr(n, "sym:name"), "'function"), args_call);
+  String *lispified_wrapped_function_name = lispify_name(n, Getattr(n, "sym:name"), "'function");
+
+  String *ffitype_lispclass = Swig_typemap_lookup("lispclass", n, "", 0);
+  bool is_swigtype = Checkattr(n, "tmap:cout:SWIGTYPE", "1");
+
+  if (ffitype_lispclass && is_swigtype) {
+    // If this method is wrapping a cffi defined function that returns a pointer to an object of a known/wrapped class, then return an object of the class, wrapping the pointer.
+    Printf(f_clos,
+           "(%s %s (%s)\n"
+           "  (cl:let ((obj (cl:make-instance '%s)))\n"
+           "    (cl:setf (cl:slot-value obj 'ff-pointer) (%s%s))\n"
+           "    (cl:values obj)))\n\n",
+           defmethod, lispified_method_name, args_placeholder,
+           ffitype_lispclass, lispified_wrapped_function_name, args_call);
+  } else {
+    Printf(f_clos, "(%s %s (%s)\n  (%s%s))\n\n",
+           defmethod, lispified_method_name, args_placeholder,
+           lispified_wrapped_function_name, args_call);
+  }
 
   emit_export(f_clos, n, lispified_method_name);
 }
@@ -380,7 +416,8 @@ void CFFI::emit_constructor(Node *n) {
       Printf(args_placeholder, " %s", argname);
     }
 
-    if (ffitype && Strcmp(ffitype, lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'classname")) == 0)
+    bool is_swigtype = Checkattr(p, "tmap:cin:SWIGTYPE", "1");
+    if (ffitype && is_swigtype)
       Printf(args_call, " (%%ff-pointer %s)", argname); // TODO: When will this case ever be hit, because otherwise args_placeholder can be replaced by args_call!
     else
       Printf(args_call, " %s", argname);
@@ -945,7 +982,7 @@ void CFFI::emit_class(Node *n) {
     int first = 1;
     for (Iterator i = First(bases); i.item; i = Next(i)) {
       if (!first)
-  Printf(supers, " ");
+        Printf(supers, " ");
       String *s = Getattr(i.item, "name");
       Printf(supers, "%s", lispify_name(i.item, lispy_name(Char(s)), "'classname"));
     }
@@ -1142,14 +1179,14 @@ void CFFI::emit_inline(Node *n, String *name) {
     Printf(f_cl, "\n(cl:declaim (cl:inline %s))\n", name);
 }
 
-void CFFI::emit_lispfile_preamble(File *f) {
-  Swig_banner_target_lang(f, ";;;");
+void CFFI::emit_lispfile_preamble() {
+  Swig_banner_target_lang(f_clhead, ";;;");
 
   if (!lisp_preamble) {
     return;
   }
 
-  Printf(f,
+  Printf(f_clhead,
          "\n"
          "(cl:eval-when (:compile-toplevel :load-toplevel :execute)\n"
          "  (cl:defpackage #:%s)\n"
@@ -1165,19 +1202,48 @@ void CFFI::emit_lispfile_preamble(File *f) {
          module, module, (use_incongruent_methods && CPlusPlus) ? "(cl:require 'incongruent-methods)\n" : "", module, module, module);
 }
 
-void CFFI::emit_lispfile_preamble_clos(File *f) {
-  Swig_banner_target_lang(f, ";;;");
+void CFFI::emit_lispfile_preamble_clos() {
+  if (!CPlusPlus) {
+    return;
+  }
+
+  Swig_banner_target_lang(f_clos, ";;;");
 
   if (!lisp_preamble) {
     return;
   }
 
-  Printf(f,
+  Printf(f_clos,
          "\n"
          "(cl:eval-when (:compile-toplevel :load-toplevel :execute)\n"
          "  (cl:load #P\"%s.lisp\"))\n"
          "(cl:in-package #:%s)\n",
          module, module);
+}
+
+void CFFI::emit_pointer_wrapper() {
+  if (!use_pointer_wrapper) {
+    return;
+  }
+
+  Printf(f_cl,
+         ";;; SWIG pointer-wrapper code starts here\n"
+         "\n"
+         "(cl:defclass pointer-wrapper ()\n"
+         "  ((ff-pointer)\n"
+         "   (ff-pointer-type)))\n"
+         "\n"
+         "(cl:defun %%make-pointer-wrapper (pointer type)\n"
+         "  (cl:let ((obj (cl:make-instance 'pointer-wrapper)))\n"
+         "    (cl:setf (cl:slot-value obj 'ff-pointer) pointer)\n"
+         "    (cl:setf (cl:slot-value obj 'ff-pointer-type) type)\n"
+         "    (cl:values obj)))\n"
+         "\n"
+         "(%s deref ((obj pointer-wrapper))\n"
+         "  (cffi:mem-ref (cl:slot-value obj 'ff-pointer) (cl:slot-value obj 'ff-pointer-type)))\n"
+         "(cl:export 'deref)\n"
+         "\n;;; SWIG pointer-wrapper code ends here\n",
+         defmethod);
 }
 
 String *CFFI::lispify_name(Node *n, String *ty, const char *flag, bool kw) {
