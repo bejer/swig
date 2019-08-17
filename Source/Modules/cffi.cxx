@@ -418,7 +418,7 @@ void CFFI::emit_constructor(Node *n) {
 
     bool is_swigtype = Checkattr(p, "tmap:cin:SWIGTYPE", "1");
     if (ffitype && is_swigtype)
-      Printf(args_call, " (%%ff-pointer %s)", argname); // TODO: When will this case ever be hit, because otherwise args_placeholder can be replaced by args_call!
+      Printf(args_call, " (%%ff-pointer %s)", argname);
     else
       Printf(args_call, " %s", argname);
 
