@@ -89,6 +89,7 @@ private:
   void emit_defun(Node *n, String *name);
   void emit_defmethod(Node *n);
   void emit_constructor(Node *n);
+  void emit_destructor(Node *n);
   void emit_getter(Node *n);
   void emit_setter(Node *n);
   void emit_class(Node *n);
@@ -443,6 +444,22 @@ void CFFI::emit_constructor(Node *n) {
   Delete(constructor_name);
 }
 
+void CFFI::emit_destructor(Node *n) {
+  Node *parent = getCurrentClass();
+  String *class_name = lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class");
+  String *destructor_name = NewString("destroy");
+
+  Printf(f_clos,
+         "(%s %s ((obj %s))\n"
+         "  (%s (%%ff-pointer obj))\n"
+         "  (cl:slot-makunbound obj 'ff-pointer))\n\n",
+         defmethod, destructor_name, class_name,
+         lispify_name(n, Getattr(n, "sym:name"), "'function"));
+  emit_export(f_clos, n, destructor_name);
+
+  Delete(destructor_name);
+}
+
 void CFFI::emit_setter(Node *n) {
   Node *parent = getCurrentClass();
   String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
@@ -693,9 +710,10 @@ int CFFI::functionWrapper(Node *n) {
       else if (Getattr(n, "memberset"))
         emit_setter(n);
     }
-    else if (Getattr(n, "cffi:constructorfunction")) {
+    else if (Getattr(n, "cffi:constructorfunction"))
       emit_constructor(n);
-    }
+    else if (Getattr(n, "cffi:destructorfunction"))
+      emit_destructor(n);
   } else
     emit_defun(n, Getattr(n, "name"));
 
