@@ -476,9 +476,28 @@ void CFFI::emit_setter(Node *n) {
 void CFFI::emit_getter(Node *n) {
   Node *parent = getCurrentClass();
   String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
-  Printf(f_clos, "(%s %s ((obj %s))\n  (%s (%%ff-pointer obj)))\n\n",
-         defmethod, lispified_name,
-         lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), lispify_name(n, Getattr(n, "sym:name"), "'function"));
+  String *lispified_class_name = lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class");
+
+  String *lispified_wrapped_function_name = lispify_name(n, Getattr(n, "sym:name"), "'function");
+  String *ffitype_lispclass = Swig_typemap_lookup("lispclass", n, "", 0);
+  bool is_swigtype = Checkattr(n, "tmap:cout:SWIGTYPE", "1");
+
+  if (ffitype_lispclass && is_swigtype) {
+    // If this getter is returning a wrapped type/class then return an object of the class, wrapping the pointer.
+    Printf(f_clos,
+           "(%s %s ((obj %s))\n"
+           "  (cl:let ((obj (cl:make-instance '%s)))\n"
+           "    (cl:setf (cl:slot-value obj 'ff-pointer) (%s (%%ff-pointer obj)))\n"
+           "    (cl:values obj)))\n\n",
+           defmethod, lispified_name, lispified_class_name,
+           ffitype_lispclass, lispified_wrapped_function_name);
+  } else {
+    Printf(f_clos,
+           "(%s %s ((obj %s))\n"
+           "  (%s (%%ff-pointer obj)))\n\n",
+           defmethod, lispified_name,
+           lispified_class_name, lispified_wrapped_function_name);
+  }
 
   emit_export(f_clos, n, lispified_name);
 }
