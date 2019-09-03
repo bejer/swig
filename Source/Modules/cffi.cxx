@@ -1228,6 +1228,7 @@ void CFFI::emit_lispfile_preamble() {
          "(cl:eval-when (:compile-toplevel :load-toplevel :execute)\n"
          "  (cl:defpackage #:%s)\n"
          "  (cl:in-package #:%s)\n"
+         "  (cl:import 'cl::setf)\n"
          "  (cl:require 'uiop)\n"
          "  (cl:require 'cffi)\n"
          "  %s"
