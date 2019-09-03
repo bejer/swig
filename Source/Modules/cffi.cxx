@@ -1,3 +1,5 @@
+// TODO: How to make global variables of classes/structs/wrapped types, return a wrapped raw pointer, so it is usable in the methods?
+
 /* -----------------------------------------------------------------------------
  * This file is part of SWIG, which is licensed as a whole under version 3 
  * (or any later version) of the GNU General Public License. Some additional
@@ -124,7 +126,7 @@ void CFFI::main(int argc, char *argv[]) {
   CWrap = false;
   lisp_preamble = true;
   use_incongruent_methods = true;
-  use_pointer_wrapper = true;
+  use_pointer_wrapper = false; // TODO: Ensure that usage matches default value
   for (i = 1; i < argc; i++) {
     if (!Strcmp(argv[i], "-help")) {
       Printf(stdout, "%s\n", usage);
@@ -187,7 +189,7 @@ int CFFI::top(Node *n) {
     SWIG_exit(EXIT_FAILURE);
   }
 
-  if (CPlusPlus && use_incongruent_methods) {
+  if (use_incongruent_methods) {
     defmethod = NewString("incongruent-methods:define-incongruent-method");
   } else {
     defmethod = NewString("cl:defmethod");
@@ -204,7 +206,9 @@ int CFFI::top(Node *n) {
     f_begin = NewString("");
   }
 
-  if (CPlusPlus) {
+  // TODO: Properly fix if going with struct as class
+  // if (CPlusPlus) {
+  if (true) {
     String *clos_filename = NewString("");
     Printf(clos_filename, "%s%s-clos.lisp", SWIG_output_directory(), module);
     f_clos = NewFile(clos_filename, "w", SWIG_output_files());
@@ -272,8 +276,16 @@ int CFFI::classHandler(Node *n) {
 
   // maybe just remove this check and get rid of the else clause below.
   if (Strcmp(kind, "struct") == 0) {
-    emit_struct_union(n, false);
-    return SWIG_OK;
+    // TODO: Make this a configuration parameter
+    bool handle_struct_as_class = true;
+    if (handle_struct_as_class) {
+      Setattr(n, "cffi:struct_as_class", "1");
+      emit_class(n);
+      Language::classHandler(n);
+    } else {
+      emit_struct_union(n, false);
+      return SWIG_OK;
+    }
   } else if (Strcmp(kind, "union") == 0) {
     emit_struct_union(n, true);
     return SWIG_OK;
@@ -369,18 +381,24 @@ void CFFI::emit_defmethod(Node *n) {
     // If this method is wrapping a cffi defined function that returns a pointer to an object of a known/wrapped class, then return an object of the class, wrapping the pointer.
     Printf(f_clos,
            "(%s %s (%s)\n"
-           "  (cl:let ((obj (cl:make-instance '%s)))\n"
-           "    (cl:setf (cl:slot-value obj 'ff-pointer) (%s%s))\n"
-           "    (cl:values obj)))\n\n",
+           "  ;; This is from emit_defmethod\n"
+           "  (cl:let ((new-obj (cl:make-instance '%s)))\n"
+           "    (cl:setf (cl:slot-value new-obj 'ff-pointer) (%s%s))\n"
+           "    (cl:values new-obj)))\n\n",
            defmethod, lispified_method_name, args_placeholder,
            ffitype_lispclass, lispified_wrapped_function_name, args_call);
   } else {
-    Printf(f_clos, "(%s %s (%s)\n  (%s%s))\n\n",
+    Printf(f_clos,
+           "(%s %s (%s)\n"
+           "  ;; This is from emit_defmethod\n"
+           "  (%s%s))\n\n",
            defmethod, lispified_method_name, args_placeholder,
            lispified_wrapped_function_name, args_call);
   }
 
   emit_export(f_clos, n, lispified_method_name);
+
+  Delete(ffitype_lispclass);
 }
 
 void CFFI::emit_constructor(Node *n) {
@@ -434,9 +452,10 @@ void CFFI::emit_constructor(Node *n) {
 
   Printf(f_clos,
          "(%s %s (%s)\n"
-         "  (cl:let ((obj (cl:make-instance '%s)))\n"
-         "    (cl:setf (cl:slot-value obj 'ff-pointer) (%s%s))\n"
-         "    (cl:values obj)))\n\n",
+         "  ;; This is from emit_constructor\n"
+         "  (cl:let ((new-obj (cl:make-instance '%s)))\n"
+         "    (cl:setf (cl:slot-value new-obj 'ff-pointer) (%s%s))\n"
+         "    (cl:values new-obj)))\n\n",
          defmethod, constructor_name, args_placeholder, class_name,
          lispify_name(n, Getattr(n, "sym:name"), "'function"), args_call);
   emit_export(f_clos, n, constructor_name);
@@ -451,6 +470,7 @@ void CFFI::emit_destructor(Node *n) {
 
   Printf(f_clos,
          "(%s %s ((obj %s))\n"
+         "  ;; This is from emit_destructor\n"
          "  (%s (%%ff-pointer obj))\n"
          "  (cl:slot-makunbound obj 'ff-pointer))\n\n",
          defmethod, destructor_name, class_name,
@@ -462,8 +482,11 @@ void CFFI::emit_destructor(Node *n) {
 
 void CFFI::emit_setter(Node *n) {
   Node *parent = getCurrentClass();
-  String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
-  Printf(f_clos, "(%s (cl:setf %s) (arg0 (obj %s))\n  (%s (%%ff-pointer obj) arg0))\n\n",
+  String *lispified_name = lispify_name(n, lispy_name(Char(Getattr(n, "name"))), "'method");
+  Printf(f_clos,
+         "(%s (cl:setf %s) (arg0 (obj %s))\n"
+         "  ;; This is from emit_setter\n"
+         "  (%s (%%ff-pointer obj) arg0))\n\n",
          defmethod, lispified_name,
          lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class"), lispify_name(n, Getattr(n, "sym:name"), "'function"));
 
@@ -475,7 +498,7 @@ void CFFI::emit_setter(Node *n) {
 
 void CFFI::emit_getter(Node *n) {
   Node *parent = getCurrentClass();
-  String *lispified_name = lispify_name(n, Getattr(n, "name"), "'method");
+  String *lispified_name = lispify_name(n, lispy_name(Char(Getattr(n, "name"))), "'method");
   String *lispified_class_name = lispify_name(parent, lispy_name(Char(Getattr(parent, "sym:name"))), "'class");
 
   String *lispified_wrapped_function_name = lispify_name(n, Getattr(n, "sym:name"), "'function");
@@ -486,20 +509,24 @@ void CFFI::emit_getter(Node *n) {
     // If this getter is returning a wrapped type/class then return an object of the class, wrapping the pointer.
     Printf(f_clos,
            "(%s %s ((obj %s))\n"
-           "  (cl:let ((obj (cl:make-instance '%s)))\n"
-           "    (cl:setf (cl:slot-value obj 'ff-pointer) (%s (%%ff-pointer obj)))\n"
-           "    (cl:values obj)))\n\n",
+           "  ;; This is from emit_getter\n"
+           "  (cl:let ((new-obj (cl:make-instance '%s)))\n"
+           "    (cl:setf (cl:slot-value new-obj 'ff-pointer) (%s (%%ff-pointer obj)))\n"
+           "    (cl:values new-obj)))\n\n",
            defmethod, lispified_name, lispified_class_name,
            ffitype_lispclass, lispified_wrapped_function_name);
   } else {
     Printf(f_clos,
            "(%s %s ((obj %s))\n"
+           "  ;; This is from emit_getter\n"
            "  (%s (%%ff-pointer obj)))\n\n",
            defmethod, lispified_name,
            lispified_class_name, lispified_wrapped_function_name);
   }
 
   emit_export(f_clos, n, lispified_name);
+
+  Delete(ffitype_lispclass);
 }
 
 int CFFI::memberfunctionHandler(Node *n) {
@@ -681,7 +708,8 @@ int CFFI::functionWrapper(Node *n) {
 
   checkConstraints(parms, f);
 
-  Printf(f->code, "  try {\n");
+  if (CPlusPlus)
+    Printf(f->code, "  try {\n");
 
   String *actioncode = emit_action(n);
 
@@ -710,16 +738,25 @@ int CFFI::functionWrapper(Node *n) {
 
   emit_return_variable(n, Getattr(n, "type"), f);
 
-  Printf(f->code, "  } catch (...) {\n");
-  if (!is_void_return)
-    Printf(f->code, "    return (%s)0;\n", raw_return_type);
-  Printf(f->code, "  }\n");
+  if (CPlusPlus) {
+    Printf(f->code, "  } catch (...) {\n");
+    if (!is_void_return)
+      Printf(f->code, "    return (%s)0;\n", raw_return_type);
+    Printf(f->code, "  }\n");
+  }
   Printf(f->code, "}\n");
 
-  if (CPlusPlus)
+  // TODO: Clean up this struct as class
+  Node *parent = getCurrentClass();
+  bool struct_as_class = false;
+  if (parent) {
+    struct_as_class = Checkattr(parent, "cffi:struct_as_class", "1");
+  }
+
+  if (CPlusPlus || struct_as_class)
     Wrapper_print(f, f_runtime);
 
-  if (CPlusPlus) {
+  if (CPlusPlus || struct_as_class) {
     emit_defun(n, wname);
     if (Getattr(n, "cffi:memberfunction"))
       emit_defmethod(n);
@@ -760,13 +797,115 @@ void CFFI::emit_defun(Node *n, String *name) {
   ParmList *pl = Getattr(n, "parms");
 
   int argnum = 0;
-  bool is_global_function = false;
   bool is_overloaded = false;
 
-  is_global_function = Checkattr(n, "view", "globalfunctionHandler");
+  // TODO: Returning pointer of basic types, should be handled how?
+  String *ffitype = Swig_typemap_lookup("cout", n, ":pointer", 0);
 
-  func_name = lispify_name(n, func_name, "'function");
-  // TODO: When a staticmembervariable then the function name should be lispified (otherwise the Shape::nshapes static member variable is accessed through shape_nshapes_set which is not a lispy name, and is not wrapped further in the -clos file.
+  String *ffitype_lispclass = Swig_typemap_lookup("lispclass", n, "", 0);
+  bool is_swigtype_out = Checkattr(n, "tmap:cout:SWIGTYPE", "1");
+  bool is_swigtype_in = false;
+//  bool is_swigtype_in = Checkattr(n, "tmap:cin:SWIGTYPE", "1");
+//  bool is_swigtype = (is_swigtype_out || is_swigtype_in);
+
+  bool is_global_function = Checkattr(n, "view", "globalfunctionHandler");
+  bool is_member = Checkattr(n, "ismember", "1");
+
+  /*
+  Swig_print_node(n);
+  // TODO: Clean up this if-else-block - removing unused if-blocks
+  if (is_swigtype) {
+    // Make a defmethod that "wraps" this function
+  } else if (!is_member && is_global_function) {
+    // Then if not a member and is a global function that does return a basic type, then don't wrap, but use "as is"
+    func_name = lispy_name(Char(func_name));
+  } else if (Checkattr(n, "cffi:staticmembervariable", "1")) {
+    // If a staticmembervariable (returning a basic type) then use "as is"
+    func_name = lispy_name(Char(func_name));
+  }
+  */
+
+  // TODO: Can this be refactored to not have a f_cl_tmp? Had to write to this string instead of directly to the file, because to know if func_name should be lispy or not requires knowing whether any of the parameters is a SWIGTYPE and thus requires a wrapped function/method that can unpack the raw-pointer (ff-pointer) within the wrapped class / object instance
+  String *f_cl_tmp = NewString("");
+
+  Printf(f_cl_tmp, " %s", ffitype);
+  Delete(ffitype);
+
+  bool first_parameter = true;
+  for (Parm *p = pl; p; p = nextSibling(p), argnum++) {
+
+    if (SwigType_isvarargs(Getattr(p, "type"))) {
+      Printf(f_cl_tmp, "\n  %s", NewString("&rest"));
+      continue;
+    }
+
+    String *argname;
+    if (Getattr(n, "cffi:staticmembervariable")) {
+      argname = Getattr(n, "variableWrapper:sym:name"); // To avoid having the argname be e.g. Shape::nshapes (which will cause CL to look for nshapes in the package Shape - giving an error)
+    } else {
+      argname = Getattr(p, "name");
+    }
+
+    ffitype = Swig_typemap_lookup("cin", p, "", 0);
+    is_swigtype_in = is_swigtype_in || Checkattr(p, "tmap:cin:SWIGTYPE", "1");
+
+    int tempargname = 0;
+    if (!argname) {
+      argname = NewStringf("arg%d", argnum);
+      tempargname = 1;
+    } else if (Strcmp(argname, "t") == 0 || Strcmp(argname, "T") == 0) {
+      argname = NewStringf("t_arg%d", argnum);
+      tempargname = 1;
+    }
+
+    Printf(f_cl_tmp, "\n  (%s %s)", argname, ffitype);
+
+    Delete(ffitype);
+
+    // The case of having varargs and overloaded functions is not being handled properly (considered an edge case, if it is legal C/C++)
+    // If overloaded (global) function, then create parameter list for defining a method in CL
+    // ffitype = Swig_typemap_lookup("lispclass", p, "", 0);
+    // Swig_print_node(n);
+    // Swig_print_node(p);
+    // Printf(stdout, "ffitype: %s\n", ffitype);
+
+    // Prepare for creating wrapping function/method, if it is required for this function
+    ffitype = Swig_typemap_lookup("lispclass", p, "", 0);
+
+    if (first_parameter)
+      first_parameter = false;
+    else
+      Printf(args_placeholder, " ");
+
+    if (Len(ffitype) > 0)
+      Printf(args_placeholder, "(%s %s)", argname, ffitype);
+    else
+      Printf(args_placeholder, "%s", argname);
+
+    // TODO: See if SWIGTYPE attribute can be used instead
+//    Swig_print_node(p);
+    // Hacky solution: Look at the ffitype and see it if does not begin with "cl:" (indicating it is a CL built-in type), then it should use the %ff-pointer reader.
+//    if (ffitype && Strncmp(ffitype, "cl:", 3) != 0)
+    if (Checkattr(p, "tmap:cin:SWIGTYPE", "1"))
+      Printf(args_call, " (%%ff-pointer %s)", argname);
+    else
+      Printf(args_call, " %s", argname);
+
+    Delete(ffitype);
+
+    if (tempargname)
+      Delete(argname);
+  }
+
+  if (!is_swigtype_out && !is_swigtype_in) {
+    // TODO: Might miss the case:
+    // if (Checkattr(n, "cffi:staticmembervariable", "1")) {
+    // If a staticmembervariable (returning a basic type) then use "as is"
+
+//  if (!is_swigtype_in && !is_swigtype_out ) {
+    // Using c-wrapped function "as is", so make the name lispy.
+    func_name = lispy_name(Char(func_name));
+  }
 
   // Is the function overloaded
   is_overloaded = Getattr(n, "sym:overloaded") ? true : false;
@@ -780,80 +919,20 @@ void CFFI::emit_defun(Node *n, String *name) {
     }
   }
 
+  func_name = lispify_name(n, func_name, "'function");
+
   emit_inline(n, func_name);
 
   Printf(f_cl, "\n(cffi:defcfun (\"%s\" %s)", name, func_name);
-  String *ffitype = Swig_typemap_lookup("cout", n, ":pointer", 0);
 
-  Printf(f_cl, " %s", ffitype);
-  Delete(ffitype);
-
-  bool first_parameter = true;
-  for (Parm *p = pl; p; p = nextSibling(p), argnum++) {
-
-    if (SwigType_isvarargs(Getattr(p, "type"))) {
-      Printf(f_cl, "\n  %s", NewString("&rest"));
-      continue;
-    }
-
-    String *argname;
-    if (Getattr(n, "cffi:staticmembervariable")) {
-      argname = Getattr(n, "variableWrapper:sym:name"); // To avoid having the argname be e.g. Shape::nshapes (which will cause CL to look for nshapes in the package Shape - giving an error)
-    } else {
-      argname = Getattr(p, "name");
-    }
-
-    ffitype = Swig_typemap_lookup("cin", p, "", 0);
-
-    int tempargname = 0;
-    if (!argname) {
-      argname = NewStringf("arg%d", argnum);
-      tempargname = 1;
-    } else if (Strcmp(argname, "t") == 0 || Strcmp(argname, "T") == 0) {
-      argname = NewStringf("t_arg%d", argnum);
-      tempargname = 1;
-    }
-
-    Printf(f_cl, "\n  (%s %s)", argname, ffitype);
-
-    Delete(ffitype);
-
-    // The case of having varargs and overloaded functions is not being handled properly (considered an edge case, if it is legal C/C++)
-    // If overloaded (global) function, then create parameter list for definig a method in CL
-    if (is_overloaded && is_global_function) {
-      ffitype = Swig_typemap_lookup("lispclass", p, "", 0);
-
-      if (first_parameter)
-        first_parameter = false;
-      else
-        Printf(args_placeholder, " ");
-
-      if (Len(ffitype) > 0)
-        Printf(args_placeholder, "(%s %s)", argname, ffitype);
-      else
-        Printf(args_placeholder, "%s", argname);
-
-      // Hacky solution: Look at the ffitype and see it if does not begin with "cl:" (indicating it is a CL built-in type), then it should use the %ff-pointer reader.
-      if (ffitype && Strncmp(ffitype, "cl:", 3) != 0)
-        Printf(args_call, " (%%ff-pointer %s)", argname);
-      else
-        Printf(args_call, " %s", argname);
-
-      Delete(ffitype);
-    }
-
-    if (tempargname)
-      Delete(argname);
-  }
+  Printf(f_cl, "%s", f_cl_tmp);
   Printf(f_cl, ")\n");    /* finish arg list */
 
-  if (is_overloaded && is_global_function) {
-    String *lispified_method_name = lispify_name(n, lispy_name(Char(Getattr(n, "name"))), "'method");
-    Printf(f_clos, "(%s %s (%s)\n  (%s%s))\n",
-           defmethod, lispified_method_name, args_placeholder,
-           func_name, args_call);
-    emit_export(f_clos, n, lispified_method_name);
-  } else if (is_overloaded) {
+  Delete(f_cl_tmp);
+
+  //Swig_print_node(n);
+
+  if (is_overloaded && !is_global_function) {
     // Do not export low-level wrappers for overloaded functions
   } else if (Checkattr(n, "cffi:membervariable", "1")) {
     // Do not export low-level wrappers for member variables
@@ -861,9 +940,33 @@ void CFFI::emit_defun(Node *n, String *name) {
     // Do not export low-level wrappers for member functions
   } else if (Checkattr(n, "cffi:constructorfunction", "1") || Checkattr(n, "cffi:destructorfunction", "1")) {
     // Do not export low-level wrappers for constructors and destructors
+  } else if (is_swigtype_out) {
+    String *lispified_method_name = lispify_name(n, lispy_name(Char(Getattr(n, "name"))), "'method");
+    Printf(f_clos,
+           "(%s %s (%s)\n"
+           "  ;; This is from emit_defun\n"
+           "  (cl:let ((new-obj (cl:make-instance '%s)))\n"
+           "    (cl:setf (cl:slot-value new-obj 'ff-pointer) (%s%s))\n"
+           "    (cl:values new-obj)))\n\n",
+           defmethod, lispified_method_name, args_placeholder,
+           ffitype_lispclass, func_name, args_call);
+    emit_export(f_clos, n, lispified_method_name);
+  } else if ((is_swigtype_in && !is_member) || (is_overloaded && is_global_function)) {
+    String *lispified_method_name = lispify_name(n, lispy_name(Char(Getattr(n, "name"))), "'method");
+    Printf(f_clos,
+           "(%s %s (%s)\n"
+           "  ;; This is from emit_defun\n"
+           "  (%s%s))\n",
+           defmethod, lispified_method_name, args_placeholder,
+           func_name, args_call);
+    emit_export(f_clos, n, lispified_method_name);
   } else {
     emit_export(f_cl, n, func_name);
   }
+
+  Delete(args_placeholder);
+  Delete(args_call);
+  Delete(ffitype_lispclass);
 }
 
 
@@ -922,15 +1025,77 @@ int CFFI::variableWrapper(Node *n) {
   String *lisp_type = Swig_typemap_lookup("cin", n, "", 0);
   String *lisp_name = lispify_name(n, var_name, "'variable");
 
-  if (Strcmp(lisp_name, "t") == 0 || Strcmp(lisp_name, "T") == 0)
-    lisp_name = NewStringf("t_var");
+  if (Strcmp(lisp_name, "t") == 0 || Strcmp(lisp_name, "T") == 0) {
+    Delete(lisp_name);
+    lisp_name = NewString("t_var");
+  }
 
-  Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s :read-only cl:nil)\n %s)\n", var_name, lisp_name, lisp_type);
+  // TODO:
+  //   Ensure that for non swigtypes, that the lisp_name_var (or defcvar lisp name) is non-private.
+  //   Refactor / Restructure the code to be easier to maintain.
 
-  emit_export(f_cl, n, lisp_name);
+  String *lisp_name_function = NewStringf("%%%s", lisp_name);
+  String *lisp_name_var = NewStringf("%%*%s*", lisp_name);
+  String *lisp_name_macro_var = NewStringf("*%s*", lisp_name);
+  Delete(lisp_name);
+
+//  Swig_print_node(n);
+  bool is_swigtype = Checkattr(n, "tmap:cin:SWIGTYPE", "1");
+
+  if (is_swigtype) {
+    String *ffitype_lispclass = Swig_typemap_lookup("lispclass", n, "", 0);
+
+    // Swig_typemap_debug();
+    Swig_print_node(n);
+    Printf(stdout, "FFI type lisp class: %s\n", ffitype_lispclass);
+    Printf(stdout, "lisp type: %s\n", lisp_type);
+
+    Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s :read-only cl:nil)\n %s)\n", var_name, lisp_name_var, lisp_type);
+
+    Printf(f_cl,
+           "\n"
+           "(cl:defun %s ()\n"
+           "  (cl:let ((new-obj (cl:make-instance '%s)))\n"
+           "    (cl:setf (cl:slot-value new-obj 'ff-pointer) %s)\n"
+           "    (cl:values new-obj)))\n",
+           lisp_name_function, ffitype_lispclass, lisp_name_var);
+
+    Printf(f_cl,
+           "\n"
+           "(cl:defun (cl:setf %s) (obj)\n"
+           "  (cl:setf %s (cl:slot-value obj 'ff-pointer)))\n",
+           lisp_name_function, lisp_name_var);
+
+    Printf(f_cl,
+           "\n"
+           "(cl:eval-when (:compile-toplevel :load-toplevel :execute)\n"
+           "  (cl:define-symbol-macro %s (%s)))\n",
+           lisp_name_macro_var, lisp_name_function);
+
+    // TODO: Receive the pointer using (cffi:get-var-pointer 'symbol)
+    //       How to properly assign a new object to the global variable?
+
+/*
+    Printf(f_cl,
+           "\n(cffi:defvar %s (make-instance '
+    /*
+      defvar +name+
+set ff-pointer from defcvar ?
+setf +name+ should update the actual defcvar with the ff-pointer/raw pointer
+export the +name+
+     */
+    emit_export(f_cl, n, lisp_name_macro_var);
+    Delete(ffitype_lispclass);
+  } else {
+    Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s :read-only cl:nil)\n %s)\n", var_name, lisp_name_var, lisp_type);
+    emit_export(f_cl, n, lisp_name_var);
+  }
+
 
   Delete(lisp_type);
-  Delete(lisp_name);
+  Delete(lisp_name_function);
+  Delete(lisp_name_var);
+  Delete(lisp_name_macro_var);
 
   return SWIG_OK;
 }
@@ -1031,7 +1196,13 @@ void CFFI::emit_class(Node *n) {
   Printf(f_clos, "\n(cl:defclass %s%s", lisp_name, supers);
   Printf(f_clos, "\n  ((ff-pointer :reader %%ff-pointer)))\n\n");
 
-  Parm *pattern = NewParm(Getattr(n, "name"), NULL, n);
+  Parm *pattern;
+
+  bool struct_as_class = Checkattr(n, "cffi:struct_as_class", "1");
+  if (struct_as_class)
+    pattern = NewParm(Getattr(n, "classtype"), NULL, n);
+  else
+    pattern = NewParm(Getattr(n, "name"), NULL, n);
 
   Swig_typemap_register("lispclass", pattern, lisp_name, NULL, NULL);
   SwigType_add_pointer(Getattr(pattern, "type"));
@@ -1237,14 +1408,10 @@ void CFFI::emit_lispfile_preamble() {
          "(cffi:define-foreign-library %s\n"
          "  (cl:t (:default \"%s\")))\n"
          "(cffi:use-foreign-library %s)\n",
-         module, module, (use_incongruent_methods && CPlusPlus) ? "(cl:require 'incongruent-methods)\n" : "", module, module, module);
+         module, module, use_incongruent_methods ? "(cl:require 'incongruent-methods)\n" : "", module, module, module);
 }
 
 void CFFI::emit_lispfile_preamble_clos() {
-  if (!CPlusPlus) {
-    return;
-  }
-
   Swig_banner_target_lang(f_clos, ";;;");
 
   if (!lisp_preamble) {
@@ -1272,10 +1439,10 @@ void CFFI::emit_pointer_wrapper() {
          "   (ff-pointer-type)))\n"
          "\n"
          "(cl:defun %%make-pointer-wrapper (pointer type)\n"
-         "  (cl:let ((obj (cl:make-instance 'pointer-wrapper)))\n"
-         "    (cl:setf (cl:slot-value obj 'ff-pointer) pointer)\n"
-         "    (cl:setf (cl:slot-value obj 'ff-pointer-type) type)\n"
-         "    (cl:values obj)))\n"
+         "  (cl:let ((new-obj (cl:make-instance 'pointer-wrapper)))\n"
+         "    (cl:setf (cl:slot-value new-obj 'ff-pointer) pointer)\n"
+         "    (cl:setf (cl:slot-value new-obj 'ff-pointer-type) type)\n"
+         "    (cl:values new-obj)))\n"
          "\n"
          "(%s deref ((obj pointer-wrapper))\n"
          "  (cffi:mem-ref (cl:slot-value obj 'ff-pointer) (cl:slot-value obj 'ff-pointer-type)))\n"
@@ -1486,7 +1653,7 @@ String *CFFI::lispy_name(char *name) {
       helper = false;
     } else if (name[i] >= 'A' && name[i] <= 'Z') {
       if (helper)
-  Printf(new_name, "%c", '-');
+        Printf(new_name, "%c", '-');
       Printf(new_name, "%c", ('a' + (name[i] - 'A')));
       helper = false;
     } else {
