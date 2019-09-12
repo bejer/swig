@@ -1042,10 +1042,10 @@ int CFFI::variableWrapper(Node *n) {
   */
 
   // Is a static member variable
-  if (Getattr(n, "staticmembervariableHandler:name")) { // Could probably also check for the attribute cffi:staticmembervariable, which is set by this class.
-    Language::variableWrapper(n); // Force the emission of set and get function wrappers
-    return SWIG_OK;
-  }
+  // if (Getattr(n, "staticmembervariableHandler:name")) { // Could probably also check for the attribute cffi:staticmembervariable, which is set by this class.
+  //   Language::variableWrapper(n); // Force the emission of set and get function wrappers
+  //   return SWIG_OK;
+  // }
 
   Swig_print_node(n);
   Printf(stdout, "Node right in variable wrapper\n");
@@ -1074,6 +1074,11 @@ int CFFI::variableWrapper(Node *n) {
   Swig_print_node(n);
   Printf(stdout, "In variable wrapper\n");
 
+  // TODO:
+  // Properly handle the case where it is a static member variable, that is not a swigtype.
+  // Then it should not try to create an object etc in the symbol macro accessors, but still make use of the wrappers, as they are required for accessing the variable in C++? Or can it be directly defined as a defcvar?
+  // Checkattr(n, "cffi:staticmembervariable", "1")
+
   if (is_swigtype) {
     Language::variableWrapper(n); // Force the emission of set and get function wrappers
     // TODO: How to know how they are named?
@@ -1081,6 +1086,8 @@ int CFFI::variableWrapper(Node *n) {
     String *set_wrapper = Swig_name_set(NSPACE_TODO, var_name);
 
     String *ffitype_lispclass = Swig_typemap_lookup("lispclass", n, "", 0);
+
+    Printf(stdout, "ffitype_lispclass: %s\n", ffitype_lispclass);
 
     Printf(stdout, "lisp_name: %s\n", lisp_name);
 
