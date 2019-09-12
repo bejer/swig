@@ -1,3 +1,4 @@
+// TODO: Make "new-obj" be a gensym, so there will be no conflicts with the argument names.
 // TODO: How to make global variables of classes/structs/wrapped types, return a wrapped raw pointer, so it is usable in the methods?
 
 /* -----------------------------------------------------------------------------
@@ -753,10 +754,34 @@ int CFFI::functionWrapper(Node *n) {
     struct_as_class = Checkattr(parent, "cffi:struct_as_class", "1");
   }
 
-  if (CPlusPlus || struct_as_class)
-    Wrapper_print(f, f_runtime);
+  bool variable_wrapper = false;
+  variable_wrapper = Checkattr(n, "varget", "1") || Checkattr(n, "varset", "1");
+  // TODO:
+  //   - Defcfun on the varget and varset wrappers. No exporting (maybe name them as accessor functions.
+  //   - Create defuns (normal and setf version) for the variable name e.g. *global-point*.
+  //   - Create a symbol macro that uses the normal (and setf) version of defuns.
+  //  ^- Look at the cffi code / example on how to define the symbol macro and what the function and setf function looks like.
+  /*
+(cl:defun %global-point-accessor ()
+  (cl:let ((new-obj (cl:make-instance 'point-t)))
+    (cl:setf (cl:slot-value new-obj 'ff-pointer) (global_point_get))
+    (cl:values new-obj)))
+(cl:defun (cl:setf %global-point-accessor) (obj)
+  ;; Should this specialise (be a method) on the point-t class?
+  (global_point_set (cl:slot-value obj 'ff-pointer)))
+(cl:eval-when (:compile-toplevel :load-toplevel :execute)
+  (cl:define-symbol-macro *global-point* (%global-point-accessor)))
+(cl:export '*global-point*)
+  */
 
-  if (CPlusPlus || struct_as_class) {
+  if (CPlusPlus || struct_as_class || variable_wrapper) {
+    Printf(stdout, "Printing wrapper for: %s\n", signature);
+    Wrapper_print(f, f_runtime);
+  } else {
+    Printf(stdout, "Not printing wrapper for: %s\n", signature);
+  }
+
+  if (CPlusPlus || struct_as_class || variable_wrapper) {
     emit_defun(n, wname);
     if (Getattr(n, "cffi:memberfunction"))
       emit_defmethod(n);
@@ -1015,11 +1040,15 @@ int CFFI::variableWrapper(Node *n) {
          (eval-when (:compile-toplevel :load-toplevel :execute)
            (define-symbol-macro ,lisp-name (,fn)))))))
   */
+
   // Is a static member variable
   if (Getattr(n, "staticmembervariableHandler:name")) { // Could probably also check for the attribute cffi:staticmembervariable, which is set by this class.
     Language::variableWrapper(n); // Force the emission of set and get function wrappers
     return SWIG_OK;
   }
+
+  Swig_print_node(n);
+  Printf(stdout, "Node right in variable wrapper\n");
 
   String *var_name = Getattr(n, "sym:name");
   String *lisp_type = Swig_typemap_lookup("cin", n, "", 0);
@@ -1034,43 +1063,58 @@ int CFFI::variableWrapper(Node *n) {
   //   Ensure that for non swigtypes, that the lisp_name_var (or defcvar lisp name) is non-private.
   //   Refactor / Restructure the code to be easier to maintain.
 
-  String *lisp_name_function = NewStringf("%%%s", lisp_name);
-  String *lisp_name_var = NewStringf("%%*%s*", lisp_name);
-  String *lisp_name_macro_var = NewStringf("*%s*", lisp_name);
+//  String *lisp_name_function = NewStringf("%%%s", lisp_name);
+  String *lisp_name_var = NewStringf("*%s*", lispy_name(Char(lisp_name)));
+//  String *lisp_name_macro_var = NewStringf("*%s*", lisp_name);
   Delete(lisp_name);
 
-//  Swig_print_node(n);
+  //Swig_print_node(n);
   bool is_swigtype = Checkattr(n, "tmap:cin:SWIGTYPE", "1");
 
+  Swig_print_node(n);
+  Printf(stdout, "In variable wrapper\n");
+
   if (is_swigtype) {
+    Language::variableWrapper(n); // Force the emission of set and get function wrappers
+    // TODO: How to know how they are named?
+    String *get_wrapper = Swig_name_get(NSPACE_TODO, var_name);
+    String *set_wrapper = Swig_name_set(NSPACE_TODO, var_name);
+
     String *ffitype_lispclass = Swig_typemap_lookup("lispclass", n, "", 0);
 
-    // Swig_typemap_debug();
-    Swig_print_node(n);
-    Printf(stdout, "FFI type lisp class: %s\n", ffitype_lispclass);
-    Printf(stdout, "lisp type: %s\n", lisp_type);
+    Printf(stdout, "lisp_name: %s\n", lisp_name);
 
-    Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s :read-only cl:nil)\n %s)\n", var_name, lisp_name_var, lisp_type);
+    String *lisp_name_accessor = NewStringf("%%%s-accessor*", lispy_name(Char(lisp_name)));
+    //String *lisp_name_macro_var = NewStringf("*%s*", lispy_name(Char(lisp_name)));
+
+    Printf(stdout, "lisp_name_accessor: %s\n", lisp_name_accessor);
+
+    // Swig_typemap_debug();
+    // Swig_print_node(n);
+    // Printf(stdout, "Get wrapper: %s\nSet wrapper: %s\n", get_wrapper, set_wrapper);
+
+    // Printf(stdout, "FFI type lisp class: %s\n", ffitype_lispclass);
+    // Printf(stdout, "lisp type: %s\n", lisp_type);
 
     Printf(f_cl,
            "\n"
            "(cl:defun %s ()\n"
            "  (cl:let ((new-obj (cl:make-instance '%s)))\n"
-           "    (cl:setf (cl:slot-value new-obj 'ff-pointer) %s)\n"
+           "    (cl:setf (cl:slot-value new-obj 'ff-pointer) (%s))\n"
            "    (cl:values new-obj)))\n",
-           lisp_name_function, ffitype_lispclass, lisp_name_var);
+           lisp_name_accessor, ffitype_lispclass, get_wrapper);
 
     Printf(f_cl,
            "\n"
            "(cl:defun (cl:setf %s) (obj)\n"
-           "  (cl:setf %s (cl:slot-value obj 'ff-pointer)))\n",
-           lisp_name_function, lisp_name_var);
+           "  (%s (cl:slot-value obj 'ff-pointer)))\n",
+           lisp_name_accessor, set_wrapper);
 
     Printf(f_cl,
            "\n"
            "(cl:eval-when (:compile-toplevel :load-toplevel :execute)\n"
            "  (cl:define-symbol-macro %s (%s)))\n",
-           lisp_name_macro_var, lisp_name_function);
+           lisp_name_var, lisp_name_accessor);
 
     // TODO: Receive the pointer using (cffi:get-var-pointer 'symbol)
     //       How to properly assign a new object to the global variable?
@@ -1084,8 +1128,13 @@ set ff-pointer from defcvar ?
 setf +name+ should update the actual defcvar with the ff-pointer/raw pointer
 export the +name+
      */
-    emit_export(f_cl, n, lisp_name_macro_var);
+    emit_export(f_cl, n, lisp_name_var);
+
     Delete(ffitype_lispclass);
+    Delete(get_wrapper);
+    Delete(set_wrapper);
+    Delete(lisp_name_accessor);
+    //Delete(lisp_name_macro_var);
   } else {
     Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s :read-only cl:nil)\n %s)\n", var_name, lisp_name_var, lisp_type);
     emit_export(f_cl, n, lisp_name_var);
@@ -1093,9 +1142,9 @@ export the +name+
 
 
   Delete(lisp_type);
-  Delete(lisp_name_function);
+//  Delete(lisp_name_function);
   Delete(lisp_name_var);
-  Delete(lisp_name_macro_var);
+//  Delete(lisp_name_macro_var);
 
   return SWIG_OK;
 }
