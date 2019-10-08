@@ -61,6 +61,7 @@ public:
   bool CWrap;     // generate wrapper file for C code?
   File *f_begin;
   File *f_runtime;
+  File *f_runtime_variable_wrappers; // Used to ensure wrapping functions (e.g. getters and setters) for e.g. globals are being placed after the wrapped variables - preventing a compilation error stating the variable is undeclared (e.g. test case simple_array.i)
   File *f_cxx_header;
   File *f_cxx_wrapper;
   File *f_clos;
@@ -223,6 +224,7 @@ int CFFI::top(Node *n) {
   }
 
   f_runtime = NewString("");
+  f_runtime_variable_wrappers = NewString("");
   f_cxx_header = f_runtime;
   f_cxx_wrapper = NewString("");
 
@@ -259,6 +261,8 @@ int CFFI::top(Node *n) {
   Delete(f_clwrap);
   Dump(f_runtime, f_begin);
   Delete(f_runtime);
+  Dump(f_runtime_variable_wrappers, f_begin);
+  Delete(f_runtime_variable_wrappers);
   Delete(f_begin);
   Delete(f_cxx_wrapper);
   Delete(f_null);
@@ -775,7 +779,7 @@ int CFFI::functionWrapper(Node *n) {
 
   if (CPlusPlus || struct_as_class || variable_wrapper) {
     //Printf(stdout, "Printing wrapper for: %s\n", signature);
-    Wrapper_print(f, f_runtime);
+    Wrapper_print(f, f_runtime_variable_wrappers); // Place the wrapped things
   } else {
     //Printf(stdout, "Not printing wrapper for: %s\n", signature);
   }
@@ -1017,6 +1021,8 @@ int CFFI::constantWrapper(Node *n) {
 }
 
 int CFFI::variableWrapper(Node *n) {
+  Printf(stdout, "In cffi::variableWrapper\n");
+  Swig_print_node(n);
   // TODO:
   // Create wrapper functions (that are in extern "C", as the direct symbol e.g. Shape::nshapes is mangled). The wrapper functions can then be used as getter and setter for a symbol representing the static member variable.
   // Figure out how to present a static member variable - could do something similar to cffi:defcvar and either redefine the %var-accessor-<lisp-name> function, or create a macro called def-static-member-var that does something like:
@@ -1071,7 +1077,7 @@ int CFFI::variableWrapper(Node *n) {
   //Swig_print_node(n);
   bool is_swigtype = Checkattr(n, "tmap:cin:SWIGTYPE", "1");
 
-  // Swig_print_node(n);
+  Swig_print_node(n);
   // Printf(stdout, "In variable wrapper\n");
 
   // TODO:
@@ -1087,7 +1093,8 @@ int CFFI::variableWrapper(Node *n) {
 
     String *ffitype_lispclass = Swig_typemap_lookup("lispclass", n, "", 0);
 
-    //Printf(stdout, "ffitype_lispclass: %s\n", ffitype_lispclass);
+    Swig_print_node(n);
+    Printf(stdout, "ffitype_lispclass: %s\n", ffitype_lispclass);
 
     //Printf(stdout, "lisp_name: %s\n", lisp_name);
 
