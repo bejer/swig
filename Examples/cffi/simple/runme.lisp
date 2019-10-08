@@ -9,10 +9,10 @@
 ;; Manipulate the Foo global variable
 
 ;; Output its current value
-(format t "Foo = ~A~%" example:foo)
+(format t "Foo = ~A~%" example:*foo*)
 
 ;; Change its value
-(setf example:foo 3.1415926d0)
+(setf example:*foo* 3.1415926d0)
 
 ;; See if the change took effect
-(format t "Foo = ~A~%" example:foo)
+(format t "Foo = ~A~%" example:*foo*)

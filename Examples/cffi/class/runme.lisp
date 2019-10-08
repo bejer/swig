@@ -11,7 +11,7 @@
 ;;;;; Access a static member ;;;;;
 
 ;; static member variables are wrapped in getter and setter functions
-(format t "~%A total of ~A shapes were created~%" (example:shape_nshapes_get))
+(format t "~%A total of ~A shapes were created~%" example:*shape-nshapes*)
 
 ;;;;; Member data access ;;;;;
 
@@ -41,5 +41,5 @@
 (example:destroy *square*)
 (setf *square* nil)
 
-(format t "~A shapes remain~%" (example:shape_nshapes_get))
+(format t "~A shapes remain~%" example:*shape-nshapes*)
 (format t "Goodbye~%")

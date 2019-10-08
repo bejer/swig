@@ -754,8 +754,7 @@ int CFFI::functionWrapper(Node *n) {
     struct_as_class = Checkattr(parent, "cffi:struct_as_class", "1");
   }
 
-  bool variable_wrapper = false;
-  variable_wrapper = Checkattr(n, "varget", "1") || Checkattr(n, "varset", "1");
+  bool variable_wrapper = Checkattr(n, "varget", "1") || Checkattr(n, "varset", "1");
   // TODO:
   //   - Defcfun on the varget and varset wrappers. No exporting (maybe name them as accessor functions.
   //   - Create defuns (normal and setf version) for the variable name e.g. *global-point*.
@@ -775,10 +774,10 @@ int CFFI::functionWrapper(Node *n) {
   */
 
   if (CPlusPlus || struct_as_class || variable_wrapper) {
-    Printf(stdout, "Printing wrapper for: %s\n", signature);
+    //Printf(stdout, "Printing wrapper for: %s\n", signature);
     Wrapper_print(f, f_runtime);
   } else {
-    Printf(stdout, "Not printing wrapper for: %s\n", signature);
+    //Printf(stdout, "Not printing wrapper for: %s\n", signature);
   }
 
   if (CPlusPlus || struct_as_class || variable_wrapper) {
@@ -795,8 +794,9 @@ int CFFI::functionWrapper(Node *n) {
       emit_constructor(n);
     else if (Getattr(n, "cffi:destructorfunction"))
       emit_destructor(n);
-  } else
+  } else {
     emit_defun(n, Getattr(n, "name"));
+  }
 
   //   if (!overloaded || !Getattr(n, "sym:nextSibling")) {
   //     update_package_if_needed(n);
@@ -922,7 +922,7 @@ void CFFI::emit_defun(Node *n, String *name) {
       Delete(argname);
   }
 
-  if (!is_swigtype_out && !is_swigtype_in) {
+  if (!is_swigtype_out && !is_swigtype_in && !Checkattr(n, "cffi:staticmembervariable", "1")) {
     // TODO: Might miss the case:
     // if (Checkattr(n, "cffi:staticmembervariable", "1")) {
     // If a staticmembervariable (returning a basic type) then use "as is"
@@ -955,8 +955,6 @@ void CFFI::emit_defun(Node *n, String *name) {
 
   Delete(f_cl_tmp);
 
-  //Swig_print_node(n);
-
   if (is_overloaded && !is_global_function) {
     // Do not export low-level wrappers for overloaded functions
   } else if (Checkattr(n, "cffi:membervariable", "1")) {
@@ -965,6 +963,8 @@ void CFFI::emit_defun(Node *n, String *name) {
     // Do not export low-level wrappers for member functions
   } else if (Checkattr(n, "cffi:constructorfunction", "1") || Checkattr(n, "cffi:destructorfunction", "1")) {
     // Do not export low-level wrappers for constructors and destructors
+  } else if (Checkattr(n, "varget", "1") || Checkattr(n, "varset", "1")) {
+    // Do not export low-level wrappers for variable getters and setters.
   } else if (is_swigtype_out) {
     String *lispified_method_name = lispify_name(n, lispy_name(Char(Getattr(n, "name"))), "'method");
     Printf(f_clos,
@@ -1047,15 +1047,15 @@ int CFFI::variableWrapper(Node *n) {
   //   return SWIG_OK;
   // }
 
-  Swig_print_node(n);
-  Printf(stdout, "Node right in variable wrapper\n");
+  // Swig_print_node(n);
+  // Printf(stdout, "Node right in variable wrapper\n");
 
   String *var_name = Getattr(n, "sym:name");
   String *lisp_type = Swig_typemap_lookup("cin", n, "", 0);
   String *lisp_name = lispify_name(n, var_name, "'variable");
 
   if (Strcmp(lisp_name, "t") == 0 || Strcmp(lisp_name, "T") == 0) {
-    Delete(lisp_name);
+    // Delete(lisp_name); // Do not delete lisp_name, as it could be pointing to the var_name! Can/will cause a segmentation fault!
     lisp_name = NewString("t_var");
   }
 
@@ -1066,17 +1066,17 @@ int CFFI::variableWrapper(Node *n) {
 //  String *lisp_name_function = NewStringf("%%%s", lisp_name);
   String *lisp_name_var = NewStringf("*%s*", lispy_name(Char(lisp_name)));
 //  String *lisp_name_macro_var = NewStringf("*%s*", lisp_name);
-  Delete(lisp_name);
+  //Delete(lisp_name); // WARNING ERROR TODO FIXME OBS !!!!!! This line causes a segmentation fault to happen when restoring attributes/node in another function! Do not delete lisp_name, as it could be pointing to var_name, and thus cause segmentation fault!
 
   //Swig_print_node(n);
   bool is_swigtype = Checkattr(n, "tmap:cin:SWIGTYPE", "1");
 
-  Swig_print_node(n);
-  Printf(stdout, "In variable wrapper\n");
+  // Swig_print_node(n);
+  // Printf(stdout, "In variable wrapper\n");
 
   // TODO:
   // Properly handle the case where it is a static member variable, that is not a swigtype.
-  // Then it should not try to create an object etc in the symbol macro accessors, but still make use of the wrappers, as they are required for accessing the variable in C++? Or can it be directly defined as a defcvar?
+  // Then it should not try to create an object etc in the symbol macro accessors, but still make use of the wrappers, as they are required for accessing the variable in C++? Or can it be directly defined as a defcvar? (I don't think it can, as C doesn't understand to access the variable (c++ only semantics))
   // Checkattr(n, "cffi:staticmembervariable", "1")
 
   if (is_swigtype) {
@@ -1087,14 +1087,14 @@ int CFFI::variableWrapper(Node *n) {
 
     String *ffitype_lispclass = Swig_typemap_lookup("lispclass", n, "", 0);
 
-    Printf(stdout, "ffitype_lispclass: %s\n", ffitype_lispclass);
+    //Printf(stdout, "ffitype_lispclass: %s\n", ffitype_lispclass);
 
-    Printf(stdout, "lisp_name: %s\n", lisp_name);
+    //Printf(stdout, "lisp_name: %s\n", lisp_name);
 
-    String *lisp_name_accessor = NewStringf("%%%s-accessor*", lispy_name(Char(lisp_name)));
+    String *lisp_name_accessor = NewStringf("%%%s-accessor%%", lispy_name(Char(lisp_name)));
     //String *lisp_name_macro_var = NewStringf("*%s*", lispy_name(Char(lisp_name)));
 
-    Printf(stdout, "lisp_name_accessor: %s\n", lisp_name_accessor);
+    //Printf(stdout, "lisp_name_accessor: %s\n", lisp_name_accessor);
 
     // Swig_typemap_debug();
     // Swig_print_node(n);
@@ -1142,6 +1142,37 @@ export the +name+
     Delete(set_wrapper);
     Delete(lisp_name_accessor);
     //Delete(lisp_name_macro_var);
+  } else if (Checkattr(n, "cffi:staticmembervariable", "1")) {
+    // TODO: Refactor this part to make use of the above case, instead of duplicating / repeating things
+    Language::variableWrapper(n); // Force the emission of set and get function wrappers
+    String *get_wrapper = Swig_name_get(NSPACE_TODO, var_name);
+    String *set_wrapper = Swig_name_set(NSPACE_TODO, var_name);
+
+    String *lisp_name_accessor = NewStringf("%%%s-accessor*", lispy_name(Char(lisp_name)));
+
+    Printf(f_cl,
+           "\n"
+           "(cl:defun %s ()\n"
+           "  (%s))\n",
+           lisp_name_accessor, get_wrapper);
+
+    Printf(f_cl,
+           "\n"
+           "(cl:defun (cl:setf %s) (obj)\n"
+           "  (%s obj))\n",
+           lisp_name_accessor, set_wrapper);
+
+    Printf(f_cl,
+           "\n"
+           "(cl:eval-when (:compile-toplevel :load-toplevel :execute)\n"
+           "  (cl:define-symbol-macro %s (%s)))\n",
+           lisp_name_var, lisp_name_accessor);
+
+    emit_export(f_cl, n, lisp_name_var);
+
+    Delete(get_wrapper);
+    Delete(set_wrapper);
+    Delete(lisp_name_accessor);
   } else {
     Printf(f_cl, "\n(cffi:defcvar (\"%s\" %s :read-only cl:nil)\n %s)\n", var_name, lisp_name_var, lisp_type);
     emit_export(f_cl, n, lisp_name_var);
@@ -1152,7 +1183,6 @@ export the +name+
 //  Delete(lisp_name_function);
   Delete(lisp_name_var);
 //  Delete(lisp_name_macro_var);
-
   return SWIG_OK;
 }
 
@@ -1517,6 +1547,7 @@ String *CFFI::lispify_name(Node *n, String *ty, const char *flag, bool kw) {
     return NewStringf(":%s", ty);
   else
     return ty;
+  // TODO: Rewrite to always return a newly allocated string! So it is easy to know that all lispified strings (using this function) can be deleted without having side effects such as deleting attributes (if e.g. sym:name was supplied as ty)
 }
 
 /* utilities */
@@ -1705,7 +1736,11 @@ String *CFFI::lispy_name(char *name) {
   String *new_name = NewString("");
   for (unsigned int i = 0; i < strlen(name); i++) {
     if (name[i] == '_' || name[i] == '-') {
-      Printf(new_name, "%c", '-');
+      // Use _ when at the beginning of a symbol/variable name
+      if (i == 0)
+        Printf(new_name, "%c", '_');
+      else
+        Printf(new_name, "%c", '-');
       helper = false;
     } else if (name[i] >= 'A' && name[i] <= 'Z') {
       if (helper)
