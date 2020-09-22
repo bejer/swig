@@ -952,10 +952,13 @@ void CFFI::emit_defun(Node *n, String *name) {
 
   emit_inline(n, func_name);
 
-  Printf(f_cl, "\n(cffi:defcfun (\"%s\" %s)", name, func_name);
+  String *lispified_method_name_for_c = lispify_name(n, lispy_name(Char(Getattr(n, "name"))), "'method");
+  Printf(f_cl, "\n(cffi:defcfun (\"%s\" %s)", name, lispified_method_name_for_c);
 
   Printf(f_cl, "%s", f_cl_tmp);
   Printf(f_cl, ")\n");    /* finish arg list */
+
+  emit_export(f_cl, n, lispified_method_name_for_c);
 
   Delete(f_cl_tmp);
 
